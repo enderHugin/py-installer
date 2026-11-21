@@ -60,7 +60,7 @@ def _safe_rel(name):
     return bool(n) and not n.startswith('/') and ':' not in n and all(p not in ('', '.', '..') for p in parts)
 
 
-class UpdateError(Exception):
+class UpdateError(ValueError):
     pass
 
 
@@ -340,7 +340,7 @@ class Updater:
         self.save_state()
         self._prune((bk,))
         self._say('actualizado: %s' % ', '.join(sorted(todo)))
-        return {'backup': bk, 'files': sorted(todo)}
+        return {'backup': os.path.join(bk, self.main), 'backup_set': bk, 'files': sorted(todo)}
 
     # ---- volver atras -----------------------------------------------------------------------
     def backup_available(self):
@@ -387,7 +387,7 @@ class Updater:
                    'applied': time.time()})
         self.save_state()
         self._prune((cur,))
-        return {'backup': cur, 'files': sorted(restore)}
+        return {'backup': os.path.join(cur, self.main), 'backup_set': cur, 'files': sorted(restore)}
 
     # ---- reiniciar --------------------------------------------------------------------------
     def spawn_restart(self, delay=3, argv=None):

@@ -21,3 +21,8 @@ code = "import PIL, tkinter; tkinter.Tcl()"
 [data]
 zip = "datos"
 keep = ["notas.txt"]
+
+# tipo de archivo propio: en Windows y Linux se abre con el programa con doble clic
+[[associate]]
+ext = [".hola"]
+description = "Saludo de ejemplo"

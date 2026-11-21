@@ -41,14 +41,14 @@ jobs:
       # ---- Linux / macOS ----------------------------------------------------------------------
       - name: Sintaxis (bash)
         if: runner.os != 'Windows'
-        run: bash -n _site/dl/install-linux.sh
+        run: bash -n _site/dl/hola-pyi-instalar.sh
       - name: Instalar (Linux)
         if: runner.os == 'Linux'
-        run: bash _site/dl/install-linux.sh
+        run: bash _site/dl/hola-pyi-instalar.sh
       - name: Instalar (macOS, desde el zip como lo haria un usuario)
         if: runner.os == 'macOS'
         run: |
-          mkdir -p /tmp/mac && cd /tmp/mac && unzip -o "$GITHUB_WORKSPACE/_site/dl/install-macos.zip"
+          mkdir -p /tmp/mac && cd /tmp/mac && unzip -o "$GITHUB_WORKSPACE/_site/dl/hola-pyi-instalar-macos.zip"
           test -x "Instalar Hola py-installer.command"
           bash "Instalar Hola py-installer.command"
       - name: Comprobar, reinstalar y desinstalar (Linux / macOS)
@@ -57,14 +57,19 @@ jobs:
           if [ "$RUNNER_OS" = macOS ]; then ROOT="$HOME/Library/Application Support/hola-pyi"; test -d "$HOME/Applications/Hola py-installer.app"
           else ROOT="$HOME/.local/share/hola-pyi"; test -f "$HOME/.local/share/applications/hola-pyi.desktop"; fi
           "$ROOT/app/.venv/bin/python" "$ROOT/app/hola.py" --check
+          if [ "$RUNNER_OS" = macOS ]; then grep -q "<string>hola</string>" "$HOME/Applications/Hola py-installer.app/Contents/Info.plist"
+          else grep -q "^MimeType=application/x-hola-pyi-hola;" "$HOME/.local/share/applications/hola-pyi.desktop"
+               grep -q '%f' "$HOME/.local/share/applications/hola-pyi.desktop"
+               test -f "$HOME/.local/share/mime/packages/hola-pyi.xml"; fi
           "$ROOT/app/.venv/bin/python" "$ROOT/app/pyi_update.py" "$ROOT/app/hola.py" check | grep -q '"state": "same"'
           test -f "$ROOT/app/notas.txt"
           echo "editado" > "$ROOT/app/notas.txt"
-          bash "$GITHUB_WORKSPACE/_site/dl/install-linux.sh"          # segunda vez = actualizar
+          bash "$GITHUB_WORKSPACE/_site/dl/hola-pyi-instalar.sh"          # segunda vez = actualizar
           grep -q editado "$ROOT/app/notas.txt"
           bash "$ROOT/uninstall.sh" --si
           test -f "$ROOT/app/notas.txt"
           test ! -e "$ROOT/app/.venv"
+          if [ "$RUNNER_OS" = Linux ]; then test ! -e "$HOME/.local/share/mime/packages/hola-pyi.xml"; fi
           echo OK
 
       # ---- Windows ----------------------------------------------------------------------------
@@ -72,7 +77,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $t = [IO.File]::ReadAllText("_site\dl\install-windows.cmd")
+          $t = [IO.File]::ReadAllText("_site\dl\hola-pyi-instalar.cmd")
           $ps = $t.Substring($t.IndexOf('##PS##'))
           $errs = $null
           [void][System.Management.Automation.Language.Parser]::ParseInput($ps, [ref]$null, [ref]$errs)
@@ -80,7 +85,7 @@ jobs:
       - name: Instalar (Windows)
         if: runner.os == 'Windows'
         shell: cmd
-        run: call _site\dl\install-windows.cmd
+        run: call _site\dl\hola-pyi-instalar.cmd
       - name: Comprobar, reinstalar y desinstalar (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -93,14 +98,20 @@ jobs:
           if ($chk -notmatch '"state": "same"') { throw ('el actualizador no ve la instalacion: ' + $chk) }
           if (-not (Test-Path (Join-Path ([Environment]::GetFolderPath('Programs')) 'Hola py-installer.lnk'))) { throw 'falta el acceso directo' }
           if (-not (Test-Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\hola-pyi')) { throw 'falta la entrada en Aplicaciones instaladas' }
+          $cmdline = (Get-Item 'HKCU:\Software\Classes\hola-pyi.hola\shell\open\command').GetValue('')
+          if ($cmdline -notmatch 'hola\.py" "%1"') { throw ('asociacion: orden mal: ' + $cmdline) }
+          if ((Get-Item 'HKCU:\Software\Classes\.hola').GetValue('') -ne 'hola-pyi.hola') { throw 'asociacion: .hola no queda con el programa' }
+          if ($null -eq (Get-Item 'HKCU:\Software\Classes\.hola\OpenWithProgids').GetValue('hola-pyi.hola', $null)) { throw 'asociacion: falta en Abrir con' }
           Set-Content "$prog\notas.txt" 'editado'
-          cmd /c "_site\dl\install-windows.cmd"
+          cmd /c "_site\dl\hola-pyi-instalar.cmd"
           if ($LASTEXITCODE -ne 0) { throw 'la reinstalacion fallo' }
           if ((Get-Content "$prog\notas.txt") -ne 'editado') { throw 'la reinstalacion piso los datos' }
           powershell -NoProfile -ExecutionPolicy Bypass -File "$root\uninstall.ps1" -Si
           if (-not (Test-Path "$prog\notas.txt")) { throw 'la desinstalacion borro los datos que debia conservar' }
           if (Test-Path "$prog\.venv") { throw 'la desinstalacion no quito el programa' }
           if (Test-Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\hola-pyi') { throw 'quedo la entrada del registro' }
+          if (Test-Path 'HKCU:\Software\Classes\hola-pyi.hola') { throw 'quedo la asociacion' }
+          if ((Get-Item 'HKCU:\Software\Classes\.hola').GetValue('')) { throw 'quedo .hola apuntando al programa' }
           'OK'
       - name: Registro de la instalacion (si algo falla)
         if: failure()
@@ -161,13 +172,13 @@ jobs:
           cp -r example /tmp/solo && cd /tmp/solo
           sed -i 's/^desktop_shortcut = false/desktop_shortcut = false\nos = ["windows"]/' py-installer.toml
           python3 "$GITHUB_WORKSPACE/pyi.py" build --app . --base https://x.example --out /tmp/s1
-          test -f /tmp/s1/dl/install-windows.cmd
-          test ! -e /tmp/s1/dl/install-linux.sh
-          test ! -e /tmp/s1/dl/install-macos.zip
+          test -f /tmp/s1/dl/hola-pyi-instalar.cmd
+          test ! -e /tmp/s1/dl/hola-pyi-instalar.sh
+          test ! -e /tmp/s1/dl/hola-pyi-instalar-macos.zip
           grep -q '"os": \[' /tmp/s1/dl/app.json
           sed -i 's/^os = .*/os = ["macos"]/' py-installer.toml
           python3 "$GITHUB_WORKSPACE/pyi.py" build --app . --base https://x.example --out /tmp/s2
-          unzip -p /tmp/s2/dl/install-macos.zip > /tmp/mac.sh
+          unzip -p /tmp/s2/dl/hola-pyi-instalar-macos.zip > /tmp/mac.sh
           if bash /tmp/mac.sh > /tmp/out.txt 2>&1; then echo "deberia haber fallado"; exit 1; fi
           grep -q "aun no esta disponible para Linux" /tmp/out.txt
           echo OK

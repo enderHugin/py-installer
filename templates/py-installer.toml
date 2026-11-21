@@ -45,9 +45,10 @@ description = "Que hace en una frase"
 [site]
 # dir = "site"                # tu propia pagina (se copia y se sustituyen __BASE_URL__, __VERSION__...).
 #                             # Si no existe, py-installer genera una pagina de descarga sencilla.
-# windows_name = "install-windows.cmd"   # nombres de los instaladores publicados en dl/
-# linux_name = "install-linux.sh"
-# macos_name = "install-macos.zip"
+# nombres de los instaladores publicados en dl/ (por defecto, con el id del programa):
+# windows_name = "mi-app-instalar.cmd"
+# linux_name = "mi-app-instalar.sh"
+# macos_name = "mi-app-instalar-macos.zip"
 
 # Descargas extra (por ejemplo ffmpeg). Se hacen solo si falta lo extraido; un .zip o .tar.gz.
 # [[extra]]
@@ -57,6 +58,12 @@ description = "Que hace en una frase"
 # to = "bin"                                # dentro de la carpeta del programa
 # label = "ffmpeg (unos 100 MB, solo la primera vez)"
 # required = true
+
+# Tipos de archivo que abre el programa (recibe la ruta como primer argumento).
+# [[associate]]
+# ext = [".md", ".markdown"]
+# description = "Documento Markdown"
+# role = "editor"             # o "viewer"
 
 # Paso propio tras instalar (opcional): un .py que se ejecuta con el Python del programa y recibe
 # la carpeta del programa como argumento. Se publica e instala junto al programa.

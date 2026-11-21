@@ -205,18 +205,31 @@ if [ "$KIND" = linux ]; then
     ICON="$PROG/icon.png"
   fi
   TERM_FLAG=false; [ "$GUI" = 1 ] || TERM_FLAG=true
+  ASSOC_ARG=""; ASSOC_MIMELINE=""
+  if [ -n "$ASSOC_MIMES" ]; then
+    ASSOC_ARG=" %f"
+    ASSOC_MIMELINE="MimeType=$(printf '%s;' $ASSOC_MIMES)"
+    MIMEDIR="${XDG_DATA_HOME:-$HOME/.local/share}/mime"
+    if [ -n "$ASSOC_MIME_XML" ]; then             # tipos propios del programa (los que no tienen uno conocido)
+      mkdir -p "$MIMEDIR/packages"
+      printf '%s' "$ASSOC_MIME_XML" > "$MIMEDIR/packages/$APP_ID.xml"
+      SHORTCUTS+=("$MIMEDIR/packages/$APP_ID.xml")
+      command -v update-mime-database >/dev/null 2>&1 && update-mime-database "$MIMEDIR" >/dev/null 2>&1 || true
+    fi
+  fi
   DESK="$APPS/$APP_ID.desktop"
   cat > "$DESK" <<DEOF
 [Desktop Entry]
 Type=Application
 Name=$APP_NAME
 Comment=$DESCRIPTION
-Exec="$VPY" "$PROG/$ENTRY"
+Exec="$VPY" "$PROG/$ENTRY"$ASSOC_ARG
 Path=$PROG
 Icon=$ICON
 Terminal=$TERM_FLAG
 Categories=Utility;
 StartupWMClass=$APP_ID
+$ASSOC_MIMELINE
 DEOF
   chmod +x "$DESK"; SHORTCUTS+=("$DESK")
   if [ "$DESKTOP" = 1 ]; then
@@ -227,6 +240,11 @@ DEOF
     fi
   fi
   command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPS" >/dev/null 2>&1 || true
+  # los tipos propios se abren con el programa con doble clic; los conocidos (.md...) solo se anaden a "Abrir con"
+  if [ -n "$ASSOC_OWN_MIMES" ] && command -v xdg-mime >/dev/null 2>&1; then
+    for mm in $ASSOC_OWN_MIMES; do xdg-mime default "$APP_ID.desktop" "$mm" 2>/dev/null || true; done
+  fi
+  [ -n "$ASSOC_EXTS" ] && say "tipos de archivo: $ASSOC_EXTS (en \"Abrir con\")"
   LAUNCH=(nohup setsid "$VPY" "$PROG/$ENTRY")
 else
   mkdir -p "$HOME/Applications"
@@ -247,6 +265,7 @@ $ICONKEY
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>$VERSION</string>
 <key>NSHighResolutionCapable</key><true/>
+$MAC_DOC_TYPES
 </dict></plist>
 PLEOF
     cat > "$APP/Contents/MacOS/launcher" <<LAEOF
@@ -257,6 +276,11 @@ exec "$VPY" -u "$PROG/$ENTRY" >> "$PROG/arranque.log" 2>&1
 LAEOF
     chmod +x "$APP/Contents/MacOS/launcher"
     SHORTCUTS+=("$APP")
+    if [ -n "$MAC_DOC_TYPES" ]; then              # que macOS sepa ya que tipos abre (para "Abrir con")
+      LSR=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+      [ -x "$LSR" ] && "$LSR" -f "$APP" >/dev/null 2>&1 || true
+      say "tipos de archivo: $ASSOC_EXTS (en \"Abrir con\")"
+    fi
     LAUNCH=(open "$APP")
   else
     CMDF="$HOME/Applications/$LINK_NAME.command"
@@ -308,6 +332,7 @@ else
 fi
 rm -rf "$ROOT/runtime" "$ROOT/bin" "$ROOT/cache" "$ROOT/stage" "$ROOT/logs"
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "${XDG_DATA_HOME:-$HOME/.local/share}/applications" >/dev/null 2>&1 || true
+command -v update-mime-database >/dev/null 2>&1 && update-mime-database "${XDG_DATA_HOME:-$HOME/.local/share}/mime" >/dev/null 2>&1 || true
 rm -f "$0"
 rmdir "$ROOT" 2>/dev/null || true
 echo "Desinstalado."

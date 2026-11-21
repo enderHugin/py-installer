@@ -32,6 +32,12 @@ MANIFEST = 'py-installer.toml'
 UPDATER = 'pyi_update.py'          # actualizador comun: se instala junto a cada programa
 ALL_OS = ('windows', 'linux', 'macos')
 OS_LABEL = {'windows': 'Windows', 'linux': 'Linux', 'macos': 'macOS'}
+# tipos de archivo conocidos: se usa su tipo MIME de siempre (y no se le quita el programa a nadie)
+KNOWN_MIME = {'.md': 'text/markdown', '.markdown': 'text/markdown', '.mdown': 'text/markdown', '.mkd': 'text/markdown',
+              '.txt': 'text/plain', '.json': 'application/json', '.csv': 'text/csv', '.html': 'text/html', '.htm': 'text/html',
+              '.xml': 'application/xml', '.yaml': 'application/yaml', '.yml': 'application/yaml', '.toml': 'application/toml',
+              '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.svg': 'image/svg+xml',
+              '.pdf': 'application/pdf', '.zip': 'application/zip', '.py': 'text/x-python', '.ini': 'text/plain', '.log': 'text/plain'}
 
 
 def pyi_version():
@@ -139,6 +145,28 @@ def load_manifest(app_dir, repo_url=''):
     if not re.fullmatch(r'[A-Za-z0-9._ -]+', folder):
         errs.append('[app] folder: solo letras, digitos, espacios, puntos, guiones y _')
     link = re.sub(r'[\\/:*?"<>|]', '', a['name']).strip() or app_id
+    assoc, seen = [], set()
+    for x in raw.get('associate', []):
+        exts = x.get('ext', [])
+        exts = [exts] if isinstance(exts, str) else list(exts)
+        exts = [('.' + e.lstrip('.')).lower() for e in exts]
+        bad = [e for e in exts if not re.fullmatch(r'\.[a-z0-9][a-z0-9_+-]*', e)]
+        if not exts or bad:
+            errs.append('[[associate]] ext: extensiones como ".md" (%s)' % (', '.join(bad) or 'ninguna'))
+            continue
+        dup = [e for e in exts if e in seen]
+        if dup:
+            errs.append('[[associate]]: %s repetida' % ', '.join(dup))
+        seen.update(exts)
+        role = x.get('role', 'editor')
+        if role not in ('editor', 'viewer'):
+            errs.append('[[associate]] role: "editor" o "viewer"')
+        mimes = []
+        for e in exts:
+            mimes.append(x.get('mime') or KNOWN_MIME.get(e) or 'application/x-%s-%s' % (app_id, e[1:]))
+        assoc.append({'exts': exts, 'progid': '%s.%s' % (app_id, exts[0][1:]),
+                      'desc': x.get('description', '%s (%s)' % (a['name'], ', '.join(exts))),
+                      'role': role, 'mimes': mimes})
     if errs:
         raise ManifestError('; '.join(errs))
     return {
@@ -158,9 +186,10 @@ def load_manifest(app_dir, repo_url=''):
         'keep': list(data.get('keep', [])) + (['actualizacion.json'] if updater and 'actualizacion.json' not in data.get('keep', []) else []),
         'extras': extras, 'post_install': post,
         'site_dir': site.get('dir', 'site'),
-        'names': {'windows': site.get('windows_name', 'install-windows.cmd'),
-                  'linux': site.get('linux_name', 'install-linux.sh'),
-                  'macos': site.get('macos_name', 'install-macos.zip')},
+        'names': {'windows': site.get('windows_name', '%s-instalar.cmd' % app_id),
+                  'linux': site.get('linux_name', '%s-instalar.sh' % app_id),
+                  'macos': site.get('macos_name', '%s-instalar-macos.zip' % app_id)},
+        'associate': assoc,
     }
 
 
@@ -226,6 +255,8 @@ def ps_config(m, base, version, has):
         '$Keep        = %s' % ps_arr(m['keep']),
         '$Extras      = @(%s)' % ex,
         '$PostInstall = %s' % ps_str(m['post_install']),
+        '$Assoc       = @(%s)' % ', '.join('@{ progid = %s; exts = %s; desc = %s }' % (ps_str(x['progid']), ps_arr(x['exts']), ps_str(x['desc']))
+                                          for x in m['associate']),
         '# --- fin de los datos del programa ---',
     ]
     return '\n'.join(lines)
@@ -282,9 +313,46 @@ def sh_config(m, base, version, has):
         'EX_LABEL=%s' % sh_arr(x['label'] for x in extras),
         'EX_REQ=%s' % sh_arr('1' if x['required'] else '0' for x in extras),
         'POST_INSTALL=%s' % sh_str(m['post_install']),
+        'ASSOC_MIMES=%s' % sh_str(' '.join(dict.fromkeys(mm for x in m['associate'] for mm in x['mimes']))),
+        'ASSOC_OWN_MIMES=%s' % sh_str(' '.join(dict.fromkeys(mm for x in m['associate'] for mm in x['mimes'] if mm.startswith('application/x-%s-' % m['id'])))),
+        'ASSOC_MIME_XML=%s' % sh_str(mime_xml(m)),
+        'MAC_DOC_TYPES=%s' % sh_str(mac_doc_types(m)),
+        'ASSOC_EXTS=%s' % sh_str(' '.join(e for x in m['associate'] for e in x['exts'])),
         '# --- fin de los datos del programa ---',
     ]
     return '\n'.join(lines)
+
+
+def mime_xml(m):
+    """Linux: definicion de los tipos de archivo propios del programa (los que no tienen uno conocido)."""
+    own = [(e, mm, x['desc']) for x in m['associate'] for e, mm in zip(x['exts'], x['mimes'])
+           if mm.startswith('application/x-%s-' % m['id'])]
+    if not own:
+        return ''
+    from xml.sax.saxutils import escape
+    out = ['<?xml version="1.0" encoding="UTF-8"?>',
+           '<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">']
+    for e, mm, desc in own:
+        out.append('  <mime-type type="%s"><comment>%s</comment><glob pattern="*%s"/></mime-type>' % (mm, escape(desc), e))
+    out.append('</mime-info>')
+    return '\n'.join(out) + '\n'
+
+
+def mac_doc_types(m):
+    """macOS: tipos de archivo que declara la .app (para "Abrir con" y doble clic)."""
+    if not m['associate']:
+        return ''
+    from xml.sax.saxutils import escape
+    out = ['<key>CFBundleDocumentTypes</key><array>']
+    for x in m['associate']:
+        own = all(mm.startswith('application/x-%s-' % m['id']) for mm in x['mimes'])
+        out.append('<dict><key>CFBundleTypeName</key><string>%s</string>' % escape(x['desc']))
+        out.append('<key>CFBundleTypeRole</key><string>%s</string>' % ('Editor' if x['role'] == 'editor' else 'Viewer'))
+        out.append('<key>LSHandlerRank</key><string>%s</string>' % ('Owner' if own else 'Alternate'))
+        out.append('<key>CFBundleTypeExtensions</key><array>%s</array>' % ''.join('<string>%s</string>' % e[1:] for e in x['exts']))
+        out.append('</dict>')
+    out.append('</array>')
+    return ''.join(out)
 
 
 def render(template, marker_line, config):

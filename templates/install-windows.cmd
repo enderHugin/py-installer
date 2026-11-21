@@ -384,6 +384,45 @@ try {
         $s.Save()
     }
 
+    # tipos de archivo: el programa aparece en "Abrir con" (con su nombre e icono) y, si ningun otro
+    # programa abre ese tipo, queda como el de siempre (doble clic). Si ya hay otro elegido, Windows no
+    # deja cambiarlo por su cuenta: se explica al final como hacerlo.
+    $needChoice = @()
+    foreach ($a in $Assoc) {
+        try {
+            $pk = 'HKCU:\Software\Classes\' + $a.progid
+            New-Item -Path ($pk + '\shell\open\command') -Force | Out-Null
+            Set-ItemProperty -Path $pk -Name '(default)' -Value $a.desc
+            Set-ItemProperty -Path ($pk + '\shell\open') -Name 'FriendlyAppName' -Value $AppName
+            Set-ItemProperty -Path ($pk + '\shell\open\command') -Name '(default)' -Value ('"' + $target + '" "' + (Join-Path $Prog $Entry) + '" "%1"')
+            if ($hasIcoFile) {
+                New-Item -Path ($pk + '\DefaultIcon') -Force | Out-Null
+                Set-ItemProperty -Path ($pk + '\DefaultIcon') -Name '(default)' -Value ($icoPath + ',0')
+            }
+            foreach ($e in $a.exts) {
+                $ek = 'HKCU:\Software\Classes\' + $e
+                New-Item -Path ($ek + '\OpenWithProgids') -Force | Out-Null
+                New-ItemProperty -Path ($ek + '\OpenWithProgids') -Name $a.progid -Value ([byte[]]@()) -PropertyType None -Force | Out-Null
+                $cur = $null
+                try { $cur = (Get-Item -LiteralPath ('Registry::HKEY_CLASSES_ROOT\' + $e) -ErrorAction Stop).GetValue('') } catch { }
+                $uc = $null
+                try { $uc = (Get-ItemProperty -LiteralPath ('HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\' + $e + '\UserChoice') -ErrorAction Stop).ProgId } catch { }
+                if ((-not $cur -or $cur -eq $a.progid) -and (-not $uc -or $uc -eq $a.progid)) {
+                    Set-ItemProperty -Path $ek -Name '(default)' -Value $a.progid
+                } elseif ($uc -ne $a.progid) {
+                    $needChoice += $e
+                }
+            }
+        } catch { Say ('no se pudo asociar ' + ($a.exts -join ', ') + ': ' + $_.Exception.Message) }
+    }
+    if ($Assoc.Count -gt 0) {
+        try {
+            $sig = '[DllImport("shell32.dll")] public static extern void SHChangeNotify(int e, int f, IntPtr a, IntPtr b);'
+            (Add-Type -MemberDefinition $sig -Name ShN -Namespace Pyi -PassThru)::SHChangeNotify(0x08000000, 0, [IntPtr]::Zero, [IntPtr]::Zero)
+        } catch { }
+        Say ('tipos de archivo: ' + ((@($Assoc | ForEach-Object { $_.exts }) | ForEach-Object { $_ }) -join ', '))
+    }
+
     # datos de la instalacion, por si el programa los necesita (actualizarse, saber de donde vino...)
     $info = [ordered]@{ id = $AppId; name = $AppName; version = $version; base_url = $Base; python = $py; venv = $venv; program_dir = $Prog; data_dir = $Root; installer = 'py-installer ' + $PyiVersion; installed_at = (Get-Date).ToString('s') }
     [IO.File]::WriteAllText((Join-Path $Prog 'install_info.json'), ($info | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
@@ -418,6 +457,7 @@ if (Test-Path '__PROG__') {
     }
 }
 Remove-Item -Path '__REGKEY__' -Recurse -Force -ErrorAction SilentlyContinue
+__ASSOC_UNDO__
 Start-Process -WindowStyle Hidden -FilePath cmd.exe -ArgumentList '/c ping -n 4 127.0.0.1 >nul & rmdir /s /q "__ROOT__"'
 if ($Si) { Write-Host "$name se ha desinstalado." } else { [void][Windows.Forms.MessageBox]::Show("$name se ha desinstalado.", $name, 'OK', 'Information') }
 '@
@@ -425,6 +465,17 @@ if ($Si) { Write-Host "$name se ha desinstalado." } else { [void][Windows.Forms.
     $procPat = '*' + [Management.Automation.WildcardPattern]::Escape($Prog) + '*' + [Management.Automation.WildcardPattern]::Escape($Entry) + '*'
     $keepList = (@($Keep) | ForEach-Object { & $q $_ }) -join ', '
     $sq = { param($s) ([string]$s).Replace("'", "''") }
+    $undo = @()
+    foreach ($a in $Assoc) {
+        $p = & $sq $a.progid
+        $undo += "Remove-Item -LiteralPath 'HKCU:\Software\Classes\$p' -Recurse -Force -ErrorAction SilentlyContinue"
+        foreach ($e in $a.exts) {
+            $k = 'HKCU:\Software\Classes\' + (& $sq $e)
+            $undo += "Remove-ItemProperty -LiteralPath '$k\OpenWithProgids' -Name '$p' -ErrorAction SilentlyContinue"
+            $undo += "try { if ((Get-Item -LiteralPath '$k' -ErrorAction Stop).GetValue('') -eq '$p') { Remove-ItemProperty -LiteralPath '$k' -Name '(default)' -ErrorAction SilentlyContinue } } catch { }"
+        }
+    }
+    $un = $un.Replace('__ASSOC_UNDO__', ($undo -join "`r`n"))
     $un = $un.Replace('__NAME__', (& $sq $AppName)).Replace('__KEEP__', $keepList).Replace('__PROCPAT__', (& $sq $procPat)).Replace('__LINK__', (& $sq $LinkName)).Replace('__PROG__', (& $sq $Prog)).Replace('__REGKEY__', (& $sq $RegKey)).Replace('__ROOT__', $Root)
     [IO.File]::WriteAllText((Join-Path $Root 'uninstall.ps1'), $un, (New-Object Text.UTF8Encoding $true))
 
@@ -466,6 +517,9 @@ if ($Si) { Write-Host "$name se ha desinstalado." } else { [void][Windows.Forms.
     Write-Host ''
     Write-Host ('  Listo. ' + $AppName + ' esta instalado.') -ForegroundColor Green
     Write-Host '  Lo encuentras en el menu Inicio' -NoNewline; if ($Desktop) { Write-Host ' y en el escritorio.' } else { Write-Host '.' }
+    if ($needChoice.Count -gt 0) {
+        Write-Host ('  Para abrir siempre los ' + ($needChoice -join ', ') + ' con ' + $AppName + ': clic derecho en uno > Abrir con > Elegir otra aplicacion > ' + $AppName + ' > "Usar siempre esta aplicacion".') -ForegroundColor Yellow
+    }
     if (-not (EnvOpt 'NO_LAUNCH')) {
         Write-Host '  Se abre ahora.'
         Start-Process -FilePath $target -ArgumentList ('"' + $Entry + '"') -WorkingDirectory $Prog

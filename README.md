@@ -5,7 +5,7 @@
 
 Es el sistema de instalación de [widget-arena](https://github.com/enderHugin/widget-arena) y [cam-ui](https://github.com/enderHugin/cam-ui), sacado a un repo propio para mantenerlo en un solo sitio. Cada programa solo tiene que describirse en un `py-installer.toml`. py-installer genera:
 
-- **Instaladores** para cada sistema: `install-windows.cmd`, `install-linux.sh` e `install-macos.zip`.
+- **Instaladores** para cada sistema, con el nombre del proyecto: `<id>-instalar.cmd` (Windows), `<id>-instalar.sh` (Linux) y `<id>-instalar-macos.zip` (macOS).
   - No piden administrador ni Python instalado: consiguen su propio Python con [uv](https://github.com/astral-sh/uv) y no tocan el que tengas.
   - Todo se instala solo para tu usuario, con accesos directos e icono. En Windows además aparece en *Aplicaciones instaladas*.
   - Traen desinstalador, guardan un registro de la instalación y comprueban al final que las librerías cargan.
@@ -63,9 +63,30 @@ required = ["markdown"]
 | `[data]` | carpeta de datos iniciales (se copian sin pisar lo existente) y qué conservar al desinstalar |
 | `[[extra]]` | descargas aparte por sistema, como ffmpeg en Windows (zip o tar.gz; solo se baja si falta) |
 | `[hooks]` | `post_install`: un .py propio que se ejecuta tras instalar (p. ej. librerías del sistema que necesita Qt) |
+| `[[associate]]` | tipos de archivo que abre el programa (ver abajo) |
 | `[site]` | carpeta de tu propia página y nombres de los instaladores publicados |
 
 La versión sale del archivo `VERSION`, o de `APP_VERSION = "x.y.z"` en el programa. Si existen los dos, tienen que coincidir. Si el programa define `APP_PACK = N`, se incluye en `update.json`.
+
+## Tipos de archivo
+
+```toml
+[[associate]]
+ext = [".md", ".markdown"]
+description = "Documento Markdown"
+# role = "viewer"            # por defecto "editor"
+# mime = "text/markdown"     # Linux; por defecto, el conocido o uno propio del programa
+```
+
+El instalador hace que el programa los abra. El programa recibe la ruta del archivo como primer argumento. En macOS la recibe con `::tk::mac::OpenDocument`, si es de tkinter.
+
+- **Windows**:
+  - El programa aparece en «Abrir con», con su nombre y su icono.
+  - Si ningún otro programa abre ese tipo (por ejemplo, un `.wapack` propio), queda como el de siempre y el doble clic lo abre.
+  - Si ya hay otro elegido (un `.md` con el Bloc de notas), Windows no deja cambiarlo sin el usuario. El instalador explica al final cómo hacerlo: clic derecho ▸ Abrir con ▸ Elegir otra aplicación ▸ «Usar siempre».
+- **Linux**: los tipos propios se registran (`~/.local/share/mime`) y el doble clic los abre. Los conocidos, como `text/markdown`, solo se añaden a «Abrir con».
+- **macOS**: la `.app` declara los tipos (`CFBundleDocumentTypes`) y se registra en LaunchServices.
+- **Desinstalar** lo deja todo como estaba.
 
 ## Qué deja instalado
 
@@ -132,7 +153,7 @@ except ImportError:
 ```bash
 python3 pyi.py build --app example --base http://127.0.0.1:8765 --out _site
 (cd _site && python3 -m http.server 8765) &
-HOLA_PYI_NO_LAUNCH=1 bash _site/dl/install-linux.sh
+HOLA_PYI_NO_LAUNCH=1 bash _site/dl/hola-pyi-instalar.sh
 ```
 
 En cada push, [`test.yml`](.github/workflows/test.yml) instala de verdad el programa de [`example/`](example) en Windows, Linux y macOS. Después lo reinstala, comprueba que los datos siguen ahí y lo desinstala.

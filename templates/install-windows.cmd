@@ -472,7 +472,9 @@ if ($Si) { Write-Host "$name se ha desinstalado." } else { [void][Windows.Forms.
         foreach ($e in $a.exts) {
             $k = 'HKCU:\Software\Classes\' + (& $sq $e)
             $undo += "Remove-ItemProperty -LiteralPath '$k\OpenWithProgids' -Name '$p' -ErrorAction SilentlyContinue"
-            $undo += "try { if ((Get-Item -LiteralPath '$k' -ErrorAction Stop).GetValue('') -eq '$p') { Remove-ItemProperty -LiteralPath '$k' -Name '(default)' -ErrorAction SilentlyContinue } } catch { }"
+            # el valor predeterminado se borra con .NET (Remove-ItemProperty '(default)' no lo quita en PowerShell 5.1)
+            $sub = 'Software\Classes\' + (& $sq $e)
+            $undo += "try { `$rk = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('$sub', `$true); if (`$rk) { if (`$rk.GetValue('') -eq '$p') { `$rk.DeleteValue('', `$false) }; `$rk.Close() } } catch { }"
         }
     }
     $un = $un.Replace('__ASSOC_UNDO__', ($undo -join "`r`n"))

@@ -1,0 +1,62 @@
+# py-installer.toml
+# Manifiesto de py-installer: describe tu programa y py-installer genera los instaladores
+# (Windows, Linux y macOS), la pagina de descarga y el update.json.
+# Solo "id", "name" y "entry" son obligatorios; todo lo demas tiene un valor por defecto.
+
+[app]
+id = "mi-app"                 # identificador: carpetas, registro de Windows, .desktop. Minusculas, digitos y guiones.
+name = "Mi App"               # nombre visible (accesos directos, menus, mensajes)
+entry = "mi_app.py"           # el .py que se ejecuta
+description = "Que hace en una frase"
+# publisher = "enderHugin"    # por defecto, el dueno del repo de GitHub
+# files = ["otro_modulo.py"]  # archivos que acompanan al programa (se instalan junto a entry y entran en update.json)
+# gui = true                  # true: sin ventana de consola (pythonw). false: programa de terminal
+# python = "3.12"             # version de Python propia que instala uv
+# os = ["windows", "linux", "macos"]   # sistemas con instalador; los demas salen como "aun no disponible"
+# folder = "MiApp"            # nombre de la carpeta de instalacion (por defecto, id)
+# env_prefix = "MI_APP"       # prefijo de las variables opcionales (MI_APP_INSTALL_DIR...). Por defecto, id en mayusculas
+# desktop_shortcut = true     # acceso directo en el escritorio, ademas del menu
+# issues_url = "https://github.com/usuario/mi-app/issues"
+
+[icon]
+# png = "assets/icon.png"     # basta con este (512x512 ideal): el .ico y el .icns se generan solos si faltan
+# ico = "assets/icon.ico"
+# icns = "assets/icon.icns"
+
+[deps]
+# required = ["numpy", "pillow"]          # si fallan, la instalacion se para
+# requirements = "requirements.txt"       # o un requirements.txt (sus lineas cuentan como obligatorias)
+# optional = [                            # si fallan, solo se avisa
+#   { pkg = "pystray", why = "sin el no habra icono de bandeja" },
+# ]
+
+[check]
+# Comprobacion final: el instalador ejecuta esto con el Python del programa y, si falla, no lo abre
+# y explica por que. Por defecto: "import tkinter; tkinter.Tcl()" si gui = true.
+# code = "import numpy, PIL, tkinter; tkinter.Tcl()"
+# env = { QT_QPA_PLATFORM = "offscreen" }
+
+[data]
+# zip = "defaults"            # carpeta que se publica como zip y se descomprime dentro de la carpeta del programa
+# keep = ["config.json", "Capturas"]   # al desinstalar sin borrar datos, esto se conserva
+
+[site]
+# dir = "site"                # tu propia pagina (se copia y se sustituyen __BASE_URL__, __VERSION__...).
+#                             # Si no existe, py-installer genera una pagina de descarga sencilla.
+# windows_name = "install-windows.cmd"   # nombres de los instaladores publicados en dl/
+# linux_name = "install-linux.sh"
+# macos_name = "install-macos.zip"
+
+# Descargas extra (por ejemplo ffmpeg). Se hacen solo si falta lo extraido; un .zip o .tar.gz.
+# [[extra]]
+# os = "windows"
+# url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+# extract = ["ffmpeg.exe", "ffplay.exe"]   # nombres de archivo a sacar (busca en cualquier subcarpeta)
+# to = "bin"                                # dentro de la carpeta del programa
+# label = "ffmpeg (unos 100 MB, solo la primera vez)"
+# required = true
+
+# Paso propio tras instalar (opcional): un .py que se ejecuta con el Python del programa y recibe
+# la carpeta del programa como argumento. Se publica e instala junto al programa.
+# [hooks]
+# post_install = "tools/post_install.py"

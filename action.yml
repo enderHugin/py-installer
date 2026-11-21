@@ -1,0 +1,63 @@
+# action.yml
+name: py-installer
+description: Monta los instaladores (Windows, Linux, macOS), la pagina de descarga y update.json de un programa de Python.
+author: enderHugin
+branding:
+  icon: package
+  color: blue
+
+inputs:
+  app-dir:
+    description: Carpeta del programa (donde esta py-installer.toml)
+    default: '.'
+  out:
+    description: Carpeta de salida (lo que se publica en GitHub Pages)
+    default: _site
+  base-url:
+    description: URL base del sitio. Si se deja vacia, se calcula (https://<dueno>.github.io/<repo>)
+    default: ''
+
+outputs:
+  base-url:
+    description: URL base usada
+    value: ${{ steps.build.outputs.base }}
+  out:
+    description: Carpeta con el sitio montado
+    value: ${{ inputs.out }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Pillow (para generar .ico/.icns desde el png)
+      shell: bash
+      run: python -m pip install --disable-pip-version-check -q pillow
+    - name: Comprobar que el programa compila
+      shell: bash
+      working-directory: ${{ inputs.app-dir }}
+      run: |
+        python "$GITHUB_ACTION_PATH/pyi.py" check --app .
+        python - <<'EOF'
+        import py_compile, tomllib
+        a = tomllib.load(open('py-installer.toml', 'rb'))['app']
+        for f in [a['entry']] + [f for f in a.get('files', []) if f.endswith('.py')]:
+            py_compile.compile(f, doraise=True)
+        EOF
+    - name: Montar el sitio
+      id: build
+      shell: bash
+      env:
+        BASE_IN: ${{ inputs.base-url }}
+        APP_DIR: ${{ inputs.app-dir }}
+        OUT: ${{ inputs.out }}
+      run: |
+        OWNER="${GITHUB_REPOSITORY%%/*}"; REPO="${GITHUB_REPOSITORY#*/}"
+        OWNER_LC="$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')"
+        if [ -n "$BASE_IN" ]; then BASE="$BASE_IN"
+        elif [ "$REPO" = "$OWNER.github.io" ] || [ "$REPO" = "$OWNER_LC.github.io" ]; then BASE="https://$OWNER_LC.github.io"
+        else BASE="https://$OWNER_LC.github.io/$REPO"; fi
+        python "$GITHUB_ACTION_PATH/pyi.py" build --app "$APP_DIR" --base "$BASE" --out "$OUT" --repo "https://github.com/$GITHUB_REPOSITORY"
+        bash -n "$OUT"/dl/*.sh 2>/dev/null || true
+        echo "base=$BASE" >> "$GITHUB_OUTPUT"

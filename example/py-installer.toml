@@ -1,0 +1,23 @@
+# py-installer.toml
+# Programa de ejemplo: lo usan las pruebas automaticas de py-installer en Windows, Linux y macOS.
+
+[app]
+id = "hola-pyi"
+name = "Hola py-installer"
+entry = "hola.py"
+description = "Programa de ejemplo de py-installer"
+desktop_shortcut = false
+
+[icon]
+png = "assets/icon.png"
+
+[deps]
+required = ["pillow"]
+optional = [{ pkg = "paquete-que-no-existe-pyi", why = "prueba de opcional que falla" }]
+
+[check]
+code = "import PIL, tkinter; tkinter.Tcl()"
+
+[data]
+zip = "datos"
+keep = ["notas.txt"]

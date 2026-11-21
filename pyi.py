@@ -29,6 +29,7 @@ except ImportError:  # Python < 3.11
 HERE = os.path.dirname(os.path.abspath(__file__))
 TPL = os.path.join(HERE, 'templates')
 MANIFEST = 'py-installer.toml'
+UPDATER = 'pyi_update.py'          # actualizador comun: se instala junto a cada programa
 ALL_OS = ('windows', 'linux', 'macos')
 OS_LABEL = {'windows': 'Windows', 'linux': 'Linux', 'macos': 'macOS'}
 
@@ -76,7 +77,7 @@ def load_manifest(app_dir, repo_url=''):
     py = str(a.get('python', '3.12'))
     if not re.fullmatch(r'3\.\d+', py):
         errs.append('[app] python: algo como "3.12"')
-    files = [a['entry']] + [f for f in a.get('files', []) if f != a['entry']]
+    files = [a['entry']] + [f for f in a.get('files', []) if f != a['entry'] and f != UPDATER]
     hooks = raw.get('hooks', {})
     post = hooks.get('post_install', '')
     if post and post not in files:
@@ -87,6 +88,10 @@ def load_manifest(app_dir, repo_url=''):
         elif not os.path.isfile(os.path.join(app_dir, f)):
             errs.append(f'no existe el archivo {f}')
     gui = bool(a.get('gui', True))
+    updater = bool(a.get('updater', True))
+    venv = a.get('venv', '.venv')
+    if not re.fullmatch(r'[A-Za-z0-9._-]+', venv):
+        errs.append('[app] venv: un nombre de carpeta sencillo (p.ej. ".venv")')
     deps = raw.get('deps', {})
     required = list(deps.get('required', []))
     if deps.get('requirements'):
@@ -137,7 +142,8 @@ def load_manifest(app_dir, repo_url=''):
     if errs:
         raise ManifestError('; '.join(errs))
     return {
-        'id': app_id, 'name': a['name'], 'entry': a['entry'], 'files': files,
+        'id': app_id, 'name': a['name'], 'entry': a['entry'], 'files': files + ([UPDATER] if updater else []),
+        'updater': updater, 'venv': venv,
         'description': a.get('description', a['name']),
         'publisher': a.get('publisher', owner or a['name']),
         'owner': owner or 'local',
@@ -148,7 +154,8 @@ def load_manifest(app_dir, repo_url=''):
         'issues_url': a.get('issues_url', (repo_url.rstrip('/') + '/issues') if repo_url else ''),
         'icon': icon, 'required': required, 'optional': optional,
         'check_code': check_code, 'check_env': check_env,
-        'data_zip': data.get('zip', ''), 'keep': list(data.get('keep', [])),
+        'data_zip': data.get('zip', ''),
+        'keep': list(data.get('keep', [])) + (['actualizacion.json'] if updater and 'actualizacion.json' not in data.get('keep', []) else []),
         'extras': extras, 'post_install': post,
         'site_dir': site.get('dir', 'site'),
         'names': {'windows': site.get('windows_name', 'install-windows.cmd'),
@@ -203,6 +210,7 @@ def ps_config(m, base, version, has):
         '$Entry       = %s' % ps_str(m['entry']),
         '$Files       = %s' % ps_arr(m['files']),
         '$Gui         = %s' % b(m['gui']),
+        '$VenvDir     = %s' % ps_str(m['venv']),
         '$PyVer       = %s' % ps_str(m['python']),
         '$Folder      = %s' % ps_str(m['folder']),
         '$LinkName    = %s' % ps_str(m['link_name']),
@@ -249,6 +257,7 @@ def sh_config(m, base, version, has):
         'ENTRY=%s' % sh_str(m['entry']),
         'FILES=%s' % sh_arr(m['files']),
         'GUI=%s' % (1 if m['gui'] else 0),
+        'VENV_DIR=%s' % sh_str(m['venv']),
         'PY_VER=%s' % sh_str(m['python']),
         'FOLDER=%s' % sh_str(m['folder']),
         'LINK_NAME=%s' % sh_str(m['link_name']),
@@ -359,7 +368,8 @@ def build(app_dir, base, out, repo_url='', log=print):
     for f in m['files']:
         d = os.path.join(dl, f)
         os.makedirs(os.path.dirname(d), exist_ok=True)
-        shutil.copyfile(os.path.join(app_dir, f), d)
+        src = os.path.join(HERE, UPDATER) if f == UPDATER else os.path.join(app_dir, f)
+        shutil.copyfile(src, d)
     with open(os.path.join(dl, 'VERSION'), 'w', encoding='utf-8') as fh:
         fh.write(version + '\n')
     has = prepare_icons(app_dir, m, dl, log)

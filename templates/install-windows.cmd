@@ -308,7 +308,7 @@ try {
             if (-not (Test-Path $dst)) { New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dst) | Out-Null; Copy-Item $_.FullName $dst }
         }
     }
-    $venv = Join-Path $Prog '.venv'
+    $venv = Join-Path $Prog $VenvDir
     $vpy  = Join-Path $venv 'Scripts\python.exe'
     $vpyw = Join-Path $venv 'Scripts\pythonw.exe'
     # un entorno a medias de un intento anterior (sin pythonw.exe, sin pip o con otro Python) se rehace solo

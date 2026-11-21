@@ -132,7 +132,7 @@ if [ -d "$STAGE/data" ]; then   # los datos iniciales no pisan lo que ya tengas
     [ -e "$PROG/$f" ] || { mkdir -p "$(dirname "$PROG/$f")"; cp "$STAGE/data/$f" "$PROG/$f"; }
   done
 fi
-VENV="$PROG/.venv"; VPY="$VENV/bin/python"
+VENV="$PROG/$VENV_DIR"; VPY="$VENV/bin/python"
 if [ -x "$VPY" ] && "$VPY" -c "import pip, sys; assert '%d.%d' % sys.version_info[:2] == '$PY_VER'" >/dev/null 2>&1; then
   say "el entorno ya estaba"
 else

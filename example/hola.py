@@ -24,12 +24,19 @@ def main():
         return
     root = tk.Tk()
     root.title('Hola (py-installer)')
-    root.geometry('360x160')
+    root.geometry('380x200')
     tk.Label(root, text='¡Hola! Instalado con py-installer.', font=('', 14)).pack(pady=(28, 6))
     i = info()
     tk.Label(root, text=f'version {APP_VERSION} · Python {sys.version.split()[0]}', fg='#666').pack()
     if i.get('program_dir'):
         tk.Label(root, text=i['program_dir'], fg='#999', font=('', 9)).pack(pady=(6, 0))
+    # actualizaciones: aviso al abrir, "sin preguntar", ventana para revisar y Ctrl+Shift+Alt+F12 en ella
+    try:
+        import pyi_update
+        upd = pyi_update.tk_install(root, pyi_update.Updater(__file__, version=APP_VERSION), 'Hola py-installer')
+        tk.Button(root, text='Buscar actualizaciones', command=upd.show).pack(pady=8)
+    except ImportError:
+        pass                     # desde el codigo fuente (sin instalar) no hay actualizador
     root.mainloop()
 
 

@@ -56,7 +56,7 @@ required = ["markdown"]
 
 | Sección | Para qué |
 |---|---|
-| `[app]` | id, nombre, archivo principal, otros archivos (`files`), `gui`, versión de Python, sistemas (`os`), carpeta, acceso en el escritorio |
+| `[app]` | id, nombre, archivo principal, otros archivos (`files`), `gui`, versión de Python, sistemas (`os`), carpeta, nombre de la carpeta del entorno (`venv`), acceso en el escritorio, `updater` |
 | `[icon]` | `png` (basta con este), `ico`, `icns` |
 | `[deps]` | `required` (si fallan, se para), `requirements` (un requirements.txt), `optional` (si fallan, solo avisa y dice por qué) |
 | `[check]` | código que debe funcionar al final (`import numpy, PIL, tkinter`…) y su entorno (`QT_QPA_PLATFORM`…) |
@@ -88,6 +88,44 @@ Junto al programa queda `.venv` (su entorno de Python) e `install_info.json`, co
 
 - Windows: `uninstall.ps1 -Si [-BorrarDatos]`, o el instalador con `desinstalar -Si`.
 - Linux y macOS: `uninstall.sh --si [--borrar-datos]`.
+
+## Actualizaciones dentro del programa
+
+py-installer instala `pyi_update.py` junto a cada programa y lo publica en `update.json`, así que se actualiza solo como el resto de archivos. Si un programa no lo quiere, basta con poner `updater = false` en `[app]`.
+
+**Qué hace:**
+- Compara la versión instalada con la publicada, por pack o por versión.
+- Descarga solo de la web del programa: no sigue redirecciones a otros sitios.
+- Comprueba el tamaño y la huella sha256 de cada archivo, y que los .py compilan, antes de tocar nada.
+- Antes de actualizar, guarda una copia de lo que cambia (se conservan las 5 últimas). Desde ahí se puede volver atrás, incluso desde las copias del actualizador antiguo de cam-ui y widget-arena.
+- Actualiza también los archivos nuevos que se añadan, y reinicia el programa.
+
+**Preferencias**, guardadas en `actualizacion.json`:
+
+| | |
+|---|---|
+| `auto` | avisar al abrir si hay versión nueva (por defecto, sí) |
+| `auto_apply` | actualizar al abrir **sin preguntar** y reiniciar |
+| `silent_watch` | **«vigilar sola, sin avisos»**: mira cada rato mientras está abierto, instala y reinicia sin decir nada. Es una casilla oculta que aparece al pulsar **Ctrl+Shift+Alt+F12** en la ventana de actualizaciones. |
+
+**En un programa de tkinter**, todo esto ya viene hecho:
+
+```python
+try:
+    import pyi_update
+    upd = pyi_update.tk_install(root, pyi_update.Updater(__file__, version=APP_VERSION), 'Mi App',
+                                on_close=guardar_y_salir, busy=lambda: grabando)
+    menu.add_command(label='Buscar actualizaciones…', command=upd.show)
+except ImportError:
+    pass          # ejecutado desde el código fuente: sin actualizador
+```
+
+**Con otra interfaz** (Qt, etc.) se usa solo el motor:
+- `Updater.check()`, `apply(info)`, `rollback()` y `spawn_restart()`;
+- `startup_check_due()` y `startup_action(r)`;
+- `set_auto()`, `set_auto_apply()` y `set_silent_watch()`.
+
+**Desde una terminal:** `python pyi_update.py programa.py [check|apply|rollback]`.
 
 ## Probar en local
 

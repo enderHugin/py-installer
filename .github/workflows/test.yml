@@ -57,6 +57,7 @@ jobs:
           if [ "$RUNNER_OS" = macOS ]; then ROOT="$HOME/Library/Application Support/hola-pyi"; test -d "$HOME/Applications/Hola py-installer.app"
           else ROOT="$HOME/.local/share/hola-pyi"; test -f "$HOME/.local/share/applications/hola-pyi.desktop"; fi
           "$ROOT/app/.venv/bin/python" "$ROOT/app/hola.py" --check
+          "$ROOT/app/.venv/bin/python" "$ROOT/app/pyi_update.py" "$ROOT/app/hola.py" check | grep -q '"state": "same"'
           test -f "$ROOT/app/notas.txt"
           echo "editado" > "$ROOT/app/notas.txt"
           bash "$GITHUB_WORKSPACE/_site/dl/install-linux.sh"          # segunda vez = actualizar
@@ -88,6 +89,8 @@ jobs:
           $root = Join-Path $env:LOCALAPPDATA 'hola-pyi'
           & "$prog\.venv\Scripts\python.exe" "$prog\hola.py" --check
           if ($LASTEXITCODE -ne 0) { exit 1 }
+          $chk = & "$prog\.venv\Scripts\python.exe" "$prog\pyi_update.py" "$prog\hola.py" check | Out-String
+          if ($chk -notmatch '"state": "same"') { throw ('el actualizador no ve la instalacion: ' + $chk) }
           if (-not (Test-Path (Join-Path ([Environment]::GetFolderPath('Programs')) 'Hola py-installer.lnk'))) { throw 'falta el acceso directo' }
           if (-not (Test-Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\hola-pyi')) { throw 'falta la entrada en Aplicaciones instaladas' }
           Set-Content "$prog\notas.txt" 'editado'
@@ -107,6 +110,46 @@ jobs:
           for f in "$HOME/.local/share/hola-pyi/logs/instalacion.log" "$HOME/Library/Application Support/hola-pyi/logs/instalacion.log" "$LOCALAPPDATA/hola-pyi/logs/instalacion.log"; do
             [ -f "$f" ] && { echo "== $f"; tail -n 80 "$f"; }
           done; true
+
+  actualizador:
+    # el actualizador comun: comprobar, aplicar (con archivo nuevo), volver atras, formato antiguo,
+    # seguridad; y su ventana de tkinter con el atajo secreto, en una pantalla virtual
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python tests/test_update.py
+      - name: Ventana de tkinter (Xvfb)
+        run: |
+          sudo apt-get install -y -qq xvfb > /dev/null
+          python - <<'EOF'
+          import os, tempfile, json, shutil
+          d = tempfile.mkdtemp(); shutil.copy('pyi_update.py', d); shutil.copy('example/hola.py', d)
+          open(os.path.join(d, 'VERSION'), 'w').write('1.0.0')
+          json.dump({'base_url': 'http://127.0.0.1:9'}, open(os.path.join(d, 'install_info.json'), 'w'))
+          open('/tmp/d', 'w').write(d)
+          EOF
+          cat > /tmp/ui.py <<'EOF'
+          import sys, os
+          d = open('/tmp/d').read(); sys.path.insert(0, d)
+          import tkinter as tk, pyi_update
+          root = tk.Tk()
+          U = pyi_update.Updater(os.path.join(d, 'hola.py'))
+          ctl = pyi_update.tk_install(root, U, 'Hola', startup_delay_ms=10**8)
+          w = ctl.show(check=False)
+          def go():
+              assert not w.chk_watch.winfo_ismapped()
+              w.top.focus_force(); w.top.update()
+              w.top.event_generate('<Control-Shift-Alt-F12>'); w.top.update()
+              assert w.chk_watch.winfo_ismapped(), 'el atajo secreto no revela la casilla'
+              w.v_watch.set(True); w._watch_toggled()
+              assert U.state()['silent_watch'] is True
+              print('OK'); root.destroy()
+          root.after(800, go); root.mainloop()
+          EOF
+          xvfb-run -a python /tmp/ui.py
 
   solo-un-sistema:
     # un programa que solo tiene instalador para Windows (como cam-ui hoy): no debe generar los demas,

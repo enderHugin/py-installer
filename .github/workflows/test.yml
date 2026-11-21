@@ -33,9 +33,10 @@ jobs:
       - name: Servir el sitio en local
         shell: bash
         run: |
-          (cd _site && python -m http.server 8765 > ../http.log 2>&1 &)
-          sleep 2
-          curl -fsS http://127.0.0.1:8765/dl/app.json
+          # --bind: en macOS, sin el, escucha solo por IPv6 y 127.0.0.1 no contesta
+          (cd _site && nohup python -m http.server 8765 --bind 127.0.0.1 > ../http.log 2>&1 &)
+          for i in $(seq 1 20); do curl -fsS --max-time 2 http://127.0.0.1:8765/dl/app.json && exit 0; sleep 1; done
+          exit 1
 
       # ---- Linux / macOS ----------------------------------------------------------------------
       - name: Sintaxis (bash)

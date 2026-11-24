@@ -121,30 +121,46 @@ py-installer instala `pyi_update.py` junto a cada programa y lo publica en `upda
 - Antes de actualizar, guarda una copia de lo que cambia (se conservan las 5 últimas). Desde ahí se puede volver atrás, incluso desde las copias del actualizador antiguo de cam-ui y widget-arena.
 - Actualiza también los archivos nuevos que se añadan, y reinicia el programa.
 
+**Su propia versión.** El instalador y el actualizador comparten un número de versión, el de py-installer (`VERSION`, ahora 1.3.0; en el código, `pyi_update.PYI_VERSION`). Va aparte de la versión de cada programa. Sale abajo en la ventana de Actualizaciones («Actualizador py-installer 1.3.0»), en `update.json` (`"updater"`) y en `install_info.json`. El actualizador llega a cada programa cuando ese programa publica una versión nueva.
+
+**La misma ventana y el mismo comportamiento en todos los programas**, en tkinter (`tk_install`) y en Qt (`qt_install`):
+- Al abrir, mira si hay versión nueva y pregunta. Si se marcó «sin preguntar», la instala sola.
+- Con «vigilar sola», mira cada rato mientras el programa está abierto, instala y reinicia sin decir nada.
+- Instalar sola se intenta una vez por versión publicada, así que no puede quedarse en un bucle de reinicios. Al volver a abrir, avisa de a qué versión se actualizó.
+- No reinicia mientras el programa está ocupado (`busy`, por ejemplo grabando), ni en mitad de un arrastre o con un menú o diálogo abierto.
+- El **atajo secreto Ctrl+Shift+Alt+F12** (con o sin Win) lo recibe el actualizador, desde cualquier ventana del programa. Abre Actualizaciones con la casilla oculta «Vigilar sola, sin avisos» a la vista.
+
 **Preferencias**, guardadas en `actualizacion.json`:
 
 | | |
 |---|---|
 | `auto` | avisar al abrir si hay versión nueva (por defecto, sí) |
 | `auto_apply` | actualizar al abrir **sin preguntar** y reiniciar |
-| `silent_watch` | **«vigilar sola, sin avisos»**: mira cada rato mientras está abierto, instala y reinicia sin decir nada. Es una casilla oculta que aparece al pulsar **Ctrl+Shift+Alt+F12** en la ventana de actualizaciones. |
+| `silent_watch` | **«vigilar sola, sin avisos»**: la casilla oculta del atajo secreto |
 
-**En un programa de tkinter**, todo esto ya viene hecho:
+También se entienden los nombres antiguos de widget-arena (`watch` y `auto_install`).
+
+**tkinter:**
 
 ```python
 try:
     import pyi_update
     upd = pyi_update.tk_install(root, pyi_update.Updater(__file__, version=APP_VERSION), 'Mi App',
-                                on_close=guardar_y_salir, busy=lambda: grabando)
+                                on_close=guardar_y_salir, busy=lambda: grabando, notify=barra_de_estado)
     menu.add_command(label='Buscar actualizaciones…', command=upd.show)
 except ImportError:
     pass          # ejecutado desde el código fuente: sin actualizador
 ```
 
-**Con otra interfaz** (Qt, etc.) se usa solo el motor:
-- `Updater.check()`, `apply(info)`, `rollback()` y `spawn_restart()`;
-- `startup_check_due()` y `startup_action(r)`;
-- `set_auto()`, `set_auto_apply()` y `set_silent_watch()`.
+**Qt** (PySide6, PyQt6 o PyQt5), con la `QApplication` ya creada:
+
+```python
+upd = pyi_update.qt_install('Mi App', pyi_update.Updater(__file__, pack=APP_PACK), on_close=salir,
+                            parent=ventana, busy=lambda: grabando, notify=aviso)
+accion.triggered.connect(lambda: upd.show())
+```
+
+**Con otra interfaz** se usa solo el motor: `Updater.check()`, `apply(info)`, `rollback()`, `spawn_restart()` y las preferencias.
 
 **Desde una terminal:** `python pyi_update.py programa.py [check|apply|rollback]`.
 

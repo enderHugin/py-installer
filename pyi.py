@@ -41,10 +41,15 @@ KNOWN_MIME = {'.md': 'text/markdown', '.markdown': 'text/markdown', '.mdown': 't
 
 
 def pyi_version():
+    """Version de py-installer: la del instalador y la del actualizador (pyi_update.PYI_VERSION) son la misma."""
     try:
-        return open(os.path.join(HERE, 'VERSION'), encoding='utf-8').read().strip()
+        v = open(os.path.join(HERE, 'VERSION'), encoding='utf-8').read().strip()
     except OSError:
         return '0'
+    m = re.search(r"^PYI_VERSION = '([^']+)'", open(os.path.join(HERE, UPDATER), encoding='utf-8').read(), re.M)
+    if not m or m.group(1) != v:
+        raise ManifestError('py-installer: VERSION (%s) y PYI_VERSION de pyi_update.py (%s) no coinciden' % (v, m and m.group(1)))
+    return v
 
 
 class ManifestError(Exception):
@@ -477,7 +482,7 @@ def build(app_dir, base, out, repo_url='', log=print):
     np = os.path.join(app_dir, 'NOVEDADES.md')
     if os.path.exists(np):
         notes = open(np, encoding='utf-8').read()[:4000]
-    upd = {'version': version, 'notes': notes,
+    upd = {'version': version, 'notes': notes, 'updater': pyi_version(),
            'files': {f: {'sha256': sha256(os.path.join(dl, f)), 'size': os.path.getsize(os.path.join(dl, f))}
                      for f in m['files']}}
     if pack is not None:

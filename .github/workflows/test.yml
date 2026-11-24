@@ -124,7 +124,7 @@ jobs:
 
   actualizador:
     # el actualizador comun: comprobar, aplicar (con archivo nuevo), volver atras, formato antiguo,
-    # seguridad; y su ventana de tkinter con el atajo secreto, en una pantalla virtual
+    # seguridad; y sus ventanas (tkinter y Qt) con el atajo secreto, en una pantalla virtual
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -132,35 +132,11 @@ jobs:
         with:
           python-version: '3.12'
       - run: python tests/test_update.py
-      - name: Ventana de tkinter (Xvfb)
+      - name: Ventanas de tkinter y Qt, atajo secreto, vigilar sola (Xvfb)
         run: |
-          sudo apt-get install -y -qq xvfb > /dev/null
-          python - <<'EOF'
-          import os, tempfile, json, shutil
-          d = tempfile.mkdtemp(); shutil.copy('pyi_update.py', d); shutil.copy('example/hola.py', d)
-          open(os.path.join(d, 'VERSION'), 'w').write('1.0.0')
-          json.dump({'base_url': 'http://127.0.0.1:9'}, open(os.path.join(d, 'install_info.json'), 'w'))
-          open('/tmp/d', 'w').write(d)
-          EOF
-          cat > /tmp/ui.py <<'EOF'
-          import sys, os
-          d = open('/tmp/d').read(); sys.path.insert(0, d)
-          import tkinter as tk, pyi_update
-          root = tk.Tk()
-          U = pyi_update.Updater(os.path.join(d, 'hola.py'))
-          ctl = pyi_update.tk_install(root, U, 'Hola', startup_delay_ms=10**8)
-          w = ctl.show(check=False)
-          def go():
-              assert not w.chk_watch.winfo_ismapped()
-              w.top.focus_force(); w.top.update()
-              w.top.event_generate('<Control-Shift-Alt-F12>'); w.top.update()
-              assert w.chk_watch.winfo_ismapped(), 'el atajo secreto no revela la casilla'
-              w.v_watch.set(True); w._watch_toggled()
-              assert U.state()['silent_watch'] is True
-              print('OK'); root.destroy()
-          root.after(800, go); root.mainloop()
-          EOF
-          xvfb-run -a python /tmp/ui.py
+          sudo apt-get install -y -qq xvfb libegl1 libxkbcommon0 > /dev/null
+          python -m pip install -q PySide6-Essentials || true
+          QT_QPA_PLATFORM=offscreen xvfb-run -a python tests/test_ui.py
 
   solo-un-sistema:
     # un programa que solo tiene instalador para Windows (como cam-ui hoy): no debe generar los demas,

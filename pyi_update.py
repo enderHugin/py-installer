@@ -841,10 +841,15 @@ class _TkWindow(_Window):
         self.status = ttk.Label(f, text='', wraplength=480, justify='left')
         self.status.pack(anchor='w', pady=(6, 6))
         ttk.Label(f, text=TXT['notes']).pack(anchor='w')
-        self.notes = tk.Text(f, height=8, wrap='word', relief='flat', borderwidth=0, padx=8, pady=6)
+        nf = ttk.Frame(f)
+        nf.pack(fill='both', expand=True, pady=(2, 6))
+        self.notes = tk.Text(nf, height=8, wrap='word', relief='flat', borderwidth=0, padx=8, pady=6)
         if field and fg:
             self.notes.configure(bg=field, fg=fg, insertbackground=fg)
-        self.notes.pack(fill='both', expand=True, pady=(2, 6))
+        sb = ttk.Scrollbar(nf, orient='vertical', command=self.notes.yview)
+        self.notes.configure(yscrollcommand=sb.set)
+        sb.pack(side='right', fill='y')
+        self.notes.pack(side='left', fill='both', expand=True)
         self.notes.configure(state='disabled')
         st = u.state()
         self.v = {'auto': tk.BooleanVar(value=st.get('auto', True) is not False),

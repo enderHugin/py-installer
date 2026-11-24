@@ -35,7 +35,7 @@ import subprocess
 import sys
 import time
 
-PYI_UPDATE_VERSION = 1
+PYI_UPDATE_VERSION = 2
 MAX_FILE = 64 * 1048576
 MAX_JSON = 262144
 KEEP_BACKUPS = 5
@@ -447,6 +447,12 @@ class _TkUpdates:
         self.root, self.u, self.name, self.on_close, self.busy = root, u, name, on_close, busy
         self.watch_every_ms, self.min_interval = watch_every_ms, min_interval
         self.win = None
+        # el atajo secreto funciona desde cualquier ventana del programa (no solo con la de
+        # actualizaciones delante): la abre y muestra la casilla oculta. Win pulsada o no, da igual.
+        try:
+            root.bind_all(SECRET_SHORTCUT, self._secret, add='+')
+        except Exception:
+            pass
         if u.enabled:
             root.after(startup_delay_ms, self._startup)
             root.after(startup_delay_ms + 3000, self._watch_tick)
@@ -538,6 +544,11 @@ class _TkUpdates:
         self.root.wait_window(top)
         return res['go'], res['dont']
 
+    def _secret(self, _e=None):
+        w = self.show(check=False)
+        w._reveal()
+        return 'break'
+
     def show(self, check=True):
         if self.win is not None and self.win.alive():
             self.win.lift()
@@ -584,7 +595,7 @@ class _TkUpdateWindow:
                                          command=self._watch_toggled)
         if self.v_watch.get():
             self.chk_watch.pack(anchor='w')
-        b = ttk.Frame(f)
+        b = self.buttons = ttk.Frame(f)
         b.pack(fill='x', pady=(10, 0))
         self.b_check = ttk.Button(b, text='Buscar', command=self.start_check)
         self.b_check.pack(side='left')
@@ -596,7 +607,6 @@ class _TkUpdateWindow:
         self.b_go = ttk.Button(b, text='Actualizar', command=self.apply)
         self.b_go.pack(side='right', padx=6)
         self.b_go.state(['disabled'])
-        top.bind(SECRET_SHORTCUT, self._reveal)
         if not self.u.enabled:
             self._set('Este programa no está instalado con su instalador: no puede actualizarse solo.')
             self.b_check.state(['disabled'])
@@ -626,7 +636,12 @@ class _TkUpdateWindow:
 
     def _reveal(self, _e=None):
         if not self.chk_watch.winfo_ismapped():
-            self.chk_watch.pack(anchor='w')
+            self.chk_watch.pack(anchor='w', before=self.buttons)
+        self.lift()
+        try:
+            self.chk_watch.focus_set()
+        except Exception:
+            pass
 
     def _watch_toggled(self):
         on = bool(self.v_watch.get())

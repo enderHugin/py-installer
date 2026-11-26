@@ -81,6 +81,7 @@
   "page.download": "Download",
   "page.download_for": "Download for {os}",
   "page.not_yet": "Not yet available for {os}",
+  "page.not_yet_card": "Not yet available for {os}.",
   "page.only_for": "For now there is an installer for: {list}.",
   "page.pick_os": "Choose your system below",
   "page.how.windows": "Open the downloaded file. If Windows warns you (\"Windows protected your PC\"), click \"More info\" and \"Run anyway\".",

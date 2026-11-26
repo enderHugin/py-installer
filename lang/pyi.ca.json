@@ -81,6 +81,7 @@
   "page.download": "Baixa",
   "page.download_for": "Baixa per a {os}",
   "page.not_yet": "Encara no disponible per a {os}",
+  "page.not_yet_card": "Encara no disponible per a {os}.",
   "page.only_for": "De moment hi ha instal·lador per a: {list}.",
   "page.pick_os": "Tria el teu sistema a sota",
   "page.how.windows": "Obre el fitxer baixat. Si el Windows avisa («El Windows ha protegit l'ordinador»), fes clic a «Més informació» i «Executa igualment».",

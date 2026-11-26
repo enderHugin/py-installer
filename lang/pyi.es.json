@@ -81,6 +81,7 @@
   "page.download": "Descargar",
   "page.download_for": "Descargar para {os}",
   "page.not_yet": "Aún no disponible para {os}",
+  "page.not_yet_card": "Aún no disponible para {os}.",
   "page.only_for": "De momento hay instalador para: {list}.",
   "page.pick_os": "Elige tu sistema abajo",
   "page.how.windows": "Abre el archivo descargado. Si Windows avisa («Windows protegió tu PC»), pulsa «Más información» y «Ejecutar de todos modos».",

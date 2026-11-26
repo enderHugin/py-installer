@@ -116,6 +116,10 @@ for c in langs:
     ok(not missing, '%s: lleva todos sus textos (%s)' % (name, missing[:3]))
     title = t.splitlines()[4]
     ok(title.startswith('title ') and title.isascii(), '%s: la linea title es ASCII (%s)' % (name, title))
+es_cmd = open(os.path.join(dl, 'hola-pyi-instalar.cmd'), encoding='utf-8').read()
+ok("'Descargando {app}'" in es_cmd and "'Downloading {app}'" not in es_cmd, 'es: el instalador original sale en espanol (no en el idioma de reserva)')
+for c in langs:
+    ok(all(pyi.pyi_dict(c)[k] == v for k, v in load(c).items() if not k.startswith('@')), 'pyi_dict(%s) da los textos de pyi.%s.json' % (c, c))
 en = open(os.path.join(dl, 'hola-pyi-instalar-en.cmd'), encoding='utf-8').read()
 ok("'Downloading {app}'" in en and "$Description = 'py-installer sample program'" in en and "desc = 'Sample greeting'" in en,
    'en: textos del instalador y del manifiesto traducidos')

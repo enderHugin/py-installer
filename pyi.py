@@ -87,7 +87,7 @@ def pyi_dict(code, source='es'):
     key = (code, source)
     if key not in _DICTS:
         d = {}
-        for c in dict.fromkeys([source, 'en', code]):
+        for c in [source, 'en', code]:          # el ultimo manda: el idioma pedido (aunque sea el original)
             p = os.path.join(PYI_LANG, 'pyi.%s.json' % c)
             if os.path.exists(p):
                 d.update({k: v for k, v in json.load(open(p, encoding='utf-8')).items() if not k.startswith('@')})

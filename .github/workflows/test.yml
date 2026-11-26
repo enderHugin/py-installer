@@ -107,7 +107,7 @@ jobs:
           if ($un -notmatch 'has been uninstalled') { throw 'el desinstalador no esta en ingles' }
           if ((Get-Item 'HKCU:\Software\Classes\hola-pyi.hola').GetValue('') -ne 'Sample greeting') { throw 'el tipo de archivo no esta en ingles' }
           'OK'
-      - name: Instalar (Windows), encima: el idioma elegido se conserva
+      - name: 'Instalar (Windows) encima: el idioma elegido se conserva'
         if: runner.os == 'Windows'
         shell: cmd
         run: call _site\dl\hola-pyi-instalar.cmd

@@ -40,7 +40,8 @@ def main():
     pyi.build(app, base, site, log=quiet)
     inst = os.path.join(tmp, 'instalado')
     os.makedirs(inst)
-    for f in ('hola.py', 'pyi_update.py', 'VERSION'):
+    for f in list(json.load(open(os.path.join(site, 'dl', 'update.json')))['files']) + ['VERSION']:
+        os.makedirs(os.path.dirname(os.path.join(inst, f)), exist_ok=True)
         shutil.copyfile(os.path.join(site, 'dl', f), os.path.join(inst, f))
     json.dump({'id': 'hola-pyi', 'base_url': base, 'version': '1.0.0'}, open(os.path.join(inst, 'install_info.json'), 'w'))
     U = pyi_update.Updater(os.path.join(inst, 'hola.py'))

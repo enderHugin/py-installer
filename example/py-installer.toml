@@ -26,3 +26,15 @@ keep = ["notas.txt"]
 [[associate]]
 ext = [".hola"]
 description = "Saludo de ejemplo"
+
+# idiomas: un instalador de Windows por idioma; el programa saca sus textos de lang/*.json.
+# Los textos del manifiesto (descripcion, tipos de archivo...) se traducen aqui: "original" = "traduccion".
+[i18n.en]
+"Programa de ejemplo de py-installer" = "py-installer sample program"
+"Saludo de ejemplo" = "Sample greeting"
+"prueba de opcional que falla" = "test of an optional package that fails"
+
+[i18n.ca]
+"Programa de ejemplo de py-installer" = "Programa d'exemple de py-installer"
+"Saludo de ejemplo" = "Salutació d'exemple"
+"prueba de opcional que falla" = "prova d'un paquet opcional que falla"

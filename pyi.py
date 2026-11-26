@@ -10,8 +10,13 @@ Uso:
   python3 pyi.py init  [carpeta]                 crea py-installer.toml y el workflow de GitHub Pages
 
 Todo se describe en <carpeta>/py-installer.toml (ver templates/py-installer.toml).
+
+Idiomas (lang-kit): se monta un instalador de Windows por idioma de lang/pyi.<idioma>.json; la pagina
+ofrece el del idioma del visitante. Junto al programa se instalan langkit.py, sus diccionarios
+(lang/*.json del programa, los de py-installer y los comunes) y lang.json con el idioma elegido.
 """
 import argparse
+import glob
 import hashlib
 import html
 import json
@@ -19,6 +24,7 @@ import os
 import re
 import shutil
 import sys
+import unicodedata
 import zipfile
 
 try:
@@ -30,6 +36,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TPL = os.path.join(HERE, 'templates')
 MANIFEST = 'py-installer.toml'
 UPDATER = 'pyi_update.py'          # actualizador comun: se instala junto a cada programa
+LANGKIT_DIR = os.path.join(HERE, 'vendor', 'lang-kit')   # copia de lang-kit (sistema de idiomas comun)
+LANGKIT = 'langkit.py'
+PYI_LANG = os.path.join(HERE, 'lang')                    # textos del instalador, la pagina y el actualizador
+LANG_FILE = re.compile(r'^(?:(?P<dom>[A-Za-z0-9_-]+)\.)?(?P<code>[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*)\.json$')
 ALL_OS = ('windows', 'linux', 'macos')
 OS_LABEL = {'windows': 'Windows', 'linux': 'Linux', 'macos': 'macOS'}
 # tipos de archivo conocidos: se usa su tipo MIME de siempre (y no se le quita el programa a nadie)
@@ -54,6 +64,62 @@ def pyi_version():
 
 class ManifestError(Exception):
     pass
+
+
+# ---------------------------------------------------------------------------------------------
+# Idiomas
+# ---------------------------------------------------------------------------------------------
+def pyi_langs():
+    """Idiomas en los que hay instalador (los de lang/pyi.<idioma>.json)."""
+    out = []
+    for f in sorted(os.listdir(PYI_LANG)):
+        m = LANG_FILE.match(f)
+        if m and m.group('dom') == 'pyi':
+            out.append(m.group('code'))
+    return out
+
+
+_DICTS = {}
+
+
+def pyi_dict(code, source='es'):
+    """Textos de py-installer en un idioma; lo que falte, en ingles y luego en el original."""
+    key = (code, source)
+    if key not in _DICTS:
+        d = {}
+        for c in dict.fromkeys([source, 'en', code]):
+            p = os.path.join(PYI_LANG, 'pyi.%s.json' % c)
+            if os.path.exists(p):
+                d.update({k: v for k, v in json.load(open(p, encoding='utf-8')).items() if not k.startswith('@')})
+        _DICTS[key] = d
+    return _DICTS[key]
+
+
+def tr_text(m, code, text):
+    """Un texto del manifiesto (descripcion, tipo de archivo...) en otro idioma, si [i18n.<idioma>] lo trae."""
+    return m['texts'].get(code, {}).get(text, text) if text else text
+
+
+def lang_name(m, code):
+    try:
+        return json.load(open(os.path.join(PYI_LANG, 'pyi.%s.json' % code), encoding='utf-8'))['@meta']['name']
+    except (OSError, ValueError, KeyError):
+        return code
+
+
+def ascii_text(s):
+    """Para la linea "title" del .cmd, que cmd.exe lee en la pagina de codigos de la consola."""
+    s = s.replace('·', '.')
+    return unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode()
+
+
+def win_name(m, code):
+    """Nombre del instalador de Windows en ese idioma: el original sin cambios, los demas con -<idioma>."""
+    n = m['names']['windows']
+    if code == m['source_lang']:
+        return n
+    stem, ext = os.path.splitext(n)
+    return '%s-%s%s' % (stem, code, ext)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -121,7 +187,7 @@ def load_manifest(app_dir, repo_url=''):
         if not o.get('pkg'):
             errs.append('[deps] optional: cada entrada necesita "pkg"')
             continue
-        optional.append({'pkg': o['pkg'], 'why': o.get('why', 'opcional')})
+        optional.append({'pkg': o['pkg'], 'why': o.get('why', '')})
     req_names = {re.split(r'[<>=!~\[; ]', r, maxsplit=1)[0].lower() for r in required}
     optional = [o for o in optional if re.split(r'[<>=!~\[; ]', o['pkg'], maxsplit=1)[0].lower() not in req_names]
     chk = raw.get('check', {})
@@ -172,10 +238,55 @@ def load_manifest(app_dir, repo_url=''):
         assoc.append({'exts': exts, 'progid': '%s.%s' % (app_id, exts[0][1:]),
                       'desc': x.get('description', '%s (%s)' % (a['name'], ', '.join(exts))),
                       'role': role, 'mimes': mimes})
+    # idiomas (lang-kit)
+    i18n = raw.get('i18n', {})
+    i18n_on = bool(i18n.get('enabled', True))
+    have = pyi_langs()
+    source_lang = i18n.get('source', 'es')
+    langs = sorted(dict.fromkeys(i18n.get('languages', have)), key=lambda c: (c != source_lang, c))   # el original primero
+    texts = {}
+    for k, v in i18n.items():
+        if isinstance(v, dict):
+            if not LANG_FILE.match(k + '.json'):
+                errs.append(f'[i18n.{k}]: "{k}" no es un codigo de idioma')
+            elif not all(isinstance(x, str) and isinstance(y, str) for x, y in v.items()):
+                errs.append(f'[i18n.{k}]: textos "original" = "traduccion"')
+            else:
+                texts[k] = dict(v)
+    for c in langs:
+        if c not in have:
+            errs.append(f'[i18n] languages: no hay instalador en "{c}" (hay: {", ".join(have)}); falta lang/pyi.{c}.json en py-installer')
+    if source_lang not in langs:
+        errs.append(f'[i18n] source: "{source_lang}" tiene que estar en languages')
+    sources = {}                       # archivos que pone py-installer (no estan en el repo del programa)
+    lang_files = []
+    if i18n_on:
+        app_lang = os.path.join(app_dir, 'lang')
+        if os.path.isdir(app_lang):
+            for f in sorted(os.listdir(app_lang)):
+                mm = LANG_FILE.match(f)
+                if not mm:
+                    continue
+                if mm.group('dom') in ('pyi', 'common'):
+                    errs.append(f'lang/{f}: los nombres pyi.* y common.* son de py-installer y lang-kit')
+                    continue
+                lang_files.append('lang/' + f)
+        for c in langs:
+            for dom, d in (('pyi', PYI_LANG), ('common', os.path.join(LANGKIT_DIR, 'lang'))):
+                src = os.path.join(d, '%s.%s.json' % (dom, c))
+                if os.path.exists(src):
+                    sources['lang/%s.%s.json' % (dom, c)] = src
+        sources[LANGKIT] = os.path.join(LANGKIT_DIR, LANGKIT)
+        files = [f for f in files if f != LANGKIT and f not in sources and f not in lang_files]
+    if updater:
+        sources[UPDATER] = os.path.join(HERE, UPDATER)
     if errs:
         raise ManifestError('; '.join(errs))
     return {
-        'id': app_id, 'name': a['name'], 'entry': a['entry'], 'files': files + ([UPDATER] if updater else []),
+        'id': app_id, 'name': a['name'], 'entry': a['entry'],
+        'files': files + lang_files + sorted(k for k in sources if k != UPDATER) + ([UPDATER] if updater else []),
+        'sources': sources, 'i18n': i18n_on, 'languages': langs if i18n_on else [source_lang],
+        'source_lang': source_lang, 'texts': texts, 'page_script': bool(i18n.get('page_script', True)),
         'updater': updater, 'venv': venv,
         'description': a.get('description', a['name']),
         'publisher': a.get('publisher', owner or a['name']),
@@ -188,7 +299,8 @@ def load_manifest(app_dir, repo_url=''):
         'icon': icon, 'required': required, 'optional': optional,
         'check_code': check_code, 'check_env': check_env,
         'data_zip': data.get('zip', ''),
-        'keep': list(data.get('keep', [])) + (['actualizacion.json'] if updater and 'actualizacion.json' not in data.get('keep', []) else []),
+        'keep': list(data.get('keep', [])) + [k for k, on in (('actualizacion.json', updater), ('lang.json', i18n_on))
+                                              if on and k not in data.get('keep', [])],
         'extras': extras, 'post_install': post,
         'site_dir': site.get('dir', 'site'),
         'names': {'windows': site.get('windows_name', '%s-instalar.cmd' % app_id),
@@ -225,11 +337,14 @@ def ps_arr(items):
     return '@(' + ', '.join(ps_str(i) for i in items) + ')'
 
 
-def ps_config(m, base, version, has):
-    opt = ', '.join('@{ pkg = %s; why = %s }' % (ps_str(o['pkg']), ps_str(o['why'])) for o in m['optional'])
+def ps_config(m, base, version, has, code=None):
+    code = code or m['source_lang']
+    T = pyi_dict(code, m['source_lang'])
+    tx = lambda t: tr_text(m, code, t)
+    opt = ', '.join('@{ pkg = %s; why = %s }' % (ps_str(o['pkg']), ps_str(tx(o['why']) or T['inst.optional'])) for o in m['optional'])
     extras = [x for x in m['extras'] if 'windows' in x['os'] or 'any' in x['os']]
     ex = ', '.join('@{ url = %s; extract = %s; to = %s; label = %s; required = %s }' % (
-        ps_str(x['url']), ps_arr(x['extract']), ps_str(x['to'].replace('/', '\\')), ps_str(x['label']),
+        ps_str(x['url']), ps_arr(x['extract']), ps_str(x['to'].replace('/', '\\')), ps_str(tx(x['label'])),
         '$true' if x['required'] else '$false') for x in extras)
     env = '; '.join('%s = %s' % (ps_str(k), ps_str(v)) for k, v in m['check_env'].items())
     b = lambda v: '$true' if v else '$false'
@@ -239,8 +354,9 @@ def ps_config(m, base, version, has):
         '$Base        = %s' % ps_str(base),
         '$AppId       = %s' % ps_str(m['id']),
         '$AppName     = %s' % ps_str(m['name']),
-        '$Description = %s' % ps_str(m['description']),
+        '$Description = %s' % ps_str(tx(m['description'])),
         '$Publisher   = %s' % ps_str(m['publisher']),
+        '$Lang        = %s' % ps_str(code),
         '$Entry       = %s' % ps_str(m['entry']),
         '$Files       = %s' % ps_arr(m['files']),
         '$Gui         = %s' % b(m['gui']),
@@ -260,8 +376,12 @@ def ps_config(m, base, version, has):
         '$Keep        = %s' % ps_arr(m['keep']),
         '$Extras      = @(%s)' % ex,
         '$PostInstall = %s' % ps_str(m['post_install']),
-        '$Assoc       = @(%s)' % ', '.join('@{ progid = %s; exts = %s; desc = %s }' % (ps_str(x['progid']), ps_arr(x['exts']), ps_str(x['desc']))
+        '$Assoc       = @(%s)' % ', '.join('@{ progid = %s; exts = %s; desc = %s }' % (ps_str(x['progid']), ps_arr(x['exts']), ps_str(tx(x['desc'])))
                                           for x in m['associate']),
+        '# textos de este instalador (lang/pyi.%s.json de py-installer)' % code,
+        '$L = @{',
+    ] + ['    %s = %s' % (ps_str(k), ps_str(v)) for k, v in sorted(T.items()) if k.startswith(('inst.', 'uninst.'))] + [
+        '}',
         '# --- fin de los datos del programa ---',
     ]
     return '\n'.join(lines)
@@ -306,7 +426,7 @@ def sh_config(m, base, version, has):
         'HAS_ICNS=%s' % (1 if has['icns'] else 0),
         'REQUIRED=%s' % sh_arr(m['required']),
         'OPTIONAL_PKG=%s' % sh_arr(o['pkg'] for o in m['optional']),
-        'OPTIONAL_WHY=%s' % sh_arr(o['why'] for o in m['optional']),
+        'OPTIONAL_WHY=%s' % sh_arr(o['why'] or 'opcional' for o in m['optional']),
         'CHECK_CODE=%s' % sh_str(m['check_code']),
         'CHECK_ENV=%s' % sh_arr(f'{k}={v}' for k, v in m['check_env'].items()),
         'DATA_ZIP=%s' % sh_str('data.zip' if m['data_zip'] else ''),
@@ -441,8 +561,7 @@ def build(app_dir, base, out, repo_url='', log=print):
     for f in m['files']:
         d = os.path.join(dl, f)
         os.makedirs(os.path.dirname(d), exist_ok=True)
-        src = os.path.join(HERE, UPDATER) if f == UPDATER else os.path.join(app_dir, f)
-        shutil.copyfile(src, d)
+        shutil.copyfile(m['sources'].get(f) or os.path.join(app_dir, f), d)
     with open(os.path.join(dl, 'VERSION'), 'w', encoding='utf-8') as fh:
         fh.write(version + '\n')
     has = prepare_icons(app_dir, m, dl, log)
@@ -451,13 +570,17 @@ def build(app_dir, base, out, repo_url='', log=print):
 
     # los instaladores
     urls = {}
+    by_lang = {c: {} for c in m['languages']}      # el instalador de cada sistema en cada idioma
     if 'windows' in m['os']:
-        txt = render('install-windows.cmd', '# @@PYI_CONFIG@@', ps_config(m, base, version, has))
-        txt = txt.replace('__PYI_TITLE__', re.sub(r'[&|<>^%"]', '', m['name'])).replace('__PYI_ID__', m['id'])
-        name = m['names']['windows']
-        with open(os.path.join(dl, name), 'w', encoding='utf-8', newline='\r\n') as fh:
-            fh.write(txt)
-        urls['windows'] = f'{base}/dl/{name}'
+        for code in m['languages']:
+            txt = render('install-windows.cmd', '# @@PYI_CONFIG@@', ps_config(m, base, version, has, code))
+            title = '%s - %s' % (m['name'], pyi_dict(code, m['source_lang'])['inst.title_suffix'])
+            txt = txt.replace('__PYI_TITLE__', re.sub(r'[&|<>^%"]', '', ascii_text(title))).replace('__PYI_ID__', m['id'])
+            name = win_name(m, code)
+            with open(os.path.join(dl, name), 'w', encoding='utf-8', newline='\r\n') as fh:
+                fh.write(txt)
+            by_lang[code]['windows'] = f'{base}/dl/{name}'
+        urls['windows'] = by_lang[m['source_lang']]['windows']
     if 'linux' in m['os'] or 'macos' in m['os']:
         txt = render('install-unix.sh', '# @@PYI_CONFIG@@', sh_config(m, base, version, has))
         if 'linux' in m['os']:
@@ -476,6 +599,10 @@ def build(app_dir, base, out, repo_url='', log=print):
             with zipfile.ZipFile(os.path.join(dl, name), 'w') as z:
                 z.writestr(zi, txt.encode('utf-8'))
             urls['macos'] = f'{base}/dl/{name}'
+    for code in m['languages']:                    # Linux y macOS: de momento, un solo instalador (espanol)
+        for o in ('linux', 'macos'):
+            if o in urls:
+                by_lang[code].setdefault(o, urls[o])
 
     # update.json: lo que lee "Buscar actualizaciones" en el programa
     notes = ''
@@ -492,7 +619,9 @@ def build(app_dir, base, out, repo_url='', log=print):
 
     # app.json: datos para la pagina (que sistemas tienen instalador y donde estan)
     info = {'id': m['id'], 'name': m['name'], 'description': m['description'], 'version': version,
-            'pack': pack, 'os': m['os'], 'installers': urls, 'repo': repo_url, 'py_installer': pyi_version()}
+            'pack': pack, 'os': m['os'], 'installers': urls, 'repo': repo_url, 'py_installer': pyi_version(),
+            'languages': m['languages'], 'source_lang': m['source_lang'], 'installers_by_lang': by_lang,
+            'descriptions': {c: tr_text(m, c, m['description']) for c in m['languages']}}
     with open(os.path.join(dl, 'app.json'), 'w', encoding='utf-8') as fh:
         json.dump(info, fh, ensure_ascii=False, indent=2)
 
@@ -505,6 +634,9 @@ def build(app_dir, base, out, repo_url='', log=print):
         '__MACOS_URL__': urls.get('macos', ''),
     }
     site_src = os.path.join(app_dir, m['site_dir'])
+    lang_js = page_lang_js(info)
+    with open(os.path.join(dl, 'pyi-lang.js'), 'w', encoding='utf-8') as fh:
+        fh.write(lang_js)
     if os.path.isdir(site_src):
         for root, dirs, files in os.walk(site_src):
             rel = os.path.relpath(root, site_src)
@@ -515,6 +647,8 @@ def build(app_dir, base, out, repo_url='', log=print):
                     t = open(s, encoding='utf-8').read()
                     for k, v in subs.items():
                         t = t.replace(k, v)
+                    if f.endswith(('.html', '.htm')) and m['page_script'] and len(m['languages']) > 1:
+                        t = inject_lang_js(t, urls, os.path.relpath(os.path.join(dl, 'pyi-lang.js'), os.path.dirname(d)))
                     open(d, 'w', encoding='utf-8').write(t)
                 else:
                     shutil.copyfile(s, d)
@@ -522,6 +656,11 @@ def build(app_dir, base, out, repo_url='', log=print):
     else:
         t = open(os.path.join(TPL, 'index.html'), encoding='utf-8').read()
         subs['__APP_JSON__'] = json.dumps(info, ensure_ascii=False).replace('</', '<\\/')
+        page = {c: dict({k: v for k, v in pyi_dict(c, m['source_lang']).items() if k.startswith('page.')},
+                        **{'@meta': {'name': lang_name(m, c)}}) for c in m['languages']}
+        subs['__PAGE_DICTS__'] = json.dumps(page, ensure_ascii=False).replace('</', '<\\/')
+        subs['__SOURCE_LANG__'] = m['source_lang']
+        subs['__TITLE__'] = html.escape(pyi_dict(m['source_lang'], m['source_lang'])['page.title'].replace('{app}', m['name']))
         subs['__OS_LIST__'] = ', '.join(OS_LABEL[o] for o in m['os'])
         subs['__HAS_ICON__'] = '1' if has['png'] else ''
         for k, v in subs.items():
@@ -532,8 +671,58 @@ def build(app_dir, base, out, repo_url='', log=print):
         log('pagina: generada por py-installer')
     open(os.path.join(out, '.nojekyll'), 'w').close()
     log(f'{m["name"]} {version}' + (f' (pack {pack})' if pack is not None else '') +
-        f': instaladores para {", ".join(OS_LABEL[o] for o in m["os"])} -> {out}')
+        f': instaladores para {", ".join(OS_LABEL[o] for o in m["os"])}, en {", ".join(m["languages"])} -> {out}')
     return info
+
+
+def page_lang_js(info):
+    """dl/pyi-lang.js: en una pagina propia, cambia los enlaces de descarga por los del idioma del visitante."""
+    links = {}
+    for o, url in info['installers'].items():
+        links[url] = {c: info['installers_by_lang'][c].get(o, url) for c in info['languages']}
+    data = json.dumps({'source': info['source_lang'], 'langs': info['languages'], 'links': links}, ensure_ascii=False)
+    return '''// pyi-lang.js
+// Generado por py-installer: los enlaces de descarga de esta pagina llevan al instalador en el idioma
+// del visitante (?lang=xx, el que eligio antes o el de su navegador). Mismas reglas que lang-kit.
+(function () {
+  var D = %s;
+  function norm(c) { c = String(c || '').replace(/_/g, '-').split('.')[0]; return /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(c) ? c.toLowerCase() : ''; }
+  function match(w) {
+    w = norm(w); if (!w) return null;
+    for (var i = 0; i < D.langs.length; i++) if (D.langs[i].toLowerCase() === w) return D.langs[i];
+    var b = w.split('-')[0];
+    for (i = 0; i < D.langs.length; i++) if (D.langs[i].split('-')[0].toLowerCase() === b) return D.langs[i];
+    return null;
+  }
+  function pick() {
+    var c = [], q = /[?&]lang=([^&#]+)/.exec(location.search);
+    if (q) c.push(decodeURIComponent(q[1]));
+    try { var s = localStorage.getItem('langkit.lang'); if (s) c.push(s); } catch (e) { }
+    c = c.concat(navigator.languages || [navigator.language || '']);
+    for (var i = 0; i < c.length; i++) { var g = match(c[i]); if (g) return g; }
+    return D.source;
+  }
+  function apply(lang) {
+    var a = document.getElementsByTagName('a');
+    for (var i = 0; i < a.length; i++) {
+      var orig = a[i].getAttribute('data-pyi-href') || a[i].href, m = D.links[orig];
+      if (m) { a[i].setAttribute('data-pyi-href', orig); a[i].href = m[lang] || orig; }
+    }
+  }
+  window.PyiLang = { data: D, pick: pick, apply: apply, lang: pick() };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { apply(window.PyiLang.lang); });
+  else apply(window.PyiLang.lang);
+})();
+''' % data
+
+
+def inject_lang_js(t, urls, rel):
+    """Anade pyi-lang.js a una pagina propia que enlaza algun instalador (si no lo lleva ya)."""
+    if 'pyi-lang.js' in t or not any(u and u in t for u in urls.values()):
+        return t
+    tag = '<script src="%s" defer></script>\n' % rel.replace(os.sep, '/')
+    i = t.lower().rfind('</body>')
+    return t[:i] + tag + t[i:] if i >= 0 else t + tag
 
 
 # ---------------------------------------------------------------------------------------------
@@ -589,7 +778,7 @@ def main(argv=None):
         elif args.cmd == 'check':
             m = load_manifest(args.app)
             v, p = read_version(args.app, m)
-            print(f'ok: {m["name"]} {v}, sistemas: {", ".join(m["os"])}, archivos: {", ".join(m["files"])}')
+            print(f'ok: {m["name"]} {v}, sistemas: {", ".join(m["os"])}, idiomas: {", ".join(m["languages"])}, archivos: {", ".join(m["files"])}')
         elif args.cmd == 'init':
             init(args.app)
         else:

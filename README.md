@@ -12,6 +12,7 @@ Es el sistema de instalación de [widget-arena](https://github.com/enderHugin/wi
   - Volver a ejecutar un instalador actualiza el programa sin pisar tus datos.
 - **Una página de descarga** que detecta tu sistema, o tu propia página con los enlaces ya rellenos.
 - **`update.json`** con la versión, las huellas sha256 y las novedades, para que el programa pueda actualizarse solo.
+- **En el idioma de quien lo descarga** (español, inglés y catalán, con [lang-kit](https://github.com/enderHugin/lang-kit)): la página ofrece el instalador en el idioma del navegador y el programa queda en ese idioma.
 - **Solo los sistemas que elijas.** Si un programa aún no funciona en macOS, no se genera su instalador y la página dice «aún no disponible».
 
 ## Usarlo en un programa
@@ -65,6 +66,7 @@ required = ["markdown"]
 | `[hooks]` | `post_install`: un .py propio que se ejecuta tras instalar (p. ej. librerías del sistema que necesita Qt) |
 | `[[associate]]` | tipos de archivo que abre el programa (ver abajo) |
 | `[site]` | carpeta de tu propia página y nombres de los instaladores publicados |
+| `[i18n]` | idiomas (`languages`, por defecto todos los que tiene py-installer), idioma original (`source`, `"es"`) y traducciones de los textos del manifiesto (ver abajo) |
 
 La versión sale del archivo `VERSION`, o de `APP_VERSION = "x.y.z"` en el programa. Si existen los dos, tienen que coincidir. Si el programa define `APP_PACK = N`, se incluye en `update.json`.
 
@@ -88,6 +90,52 @@ El instalador hace que el programa los abra. El programa recibe la ruta del arch
 - **macOS**: la `.app` declara los tipos (`CFBundleDocumentTypes`) y se registra en LaunchServices.
 - **Desinstalar** lo deja todo como estaba.
 
+## Idiomas
+
+py-installer usa [lang-kit](https://github.com/enderHugin/lang-kit), el sistema de idiomas común. Sus propios textos están en `lang/pyi.<idioma>.json`: los del instalador, el desinstalador, la página de descarga y la ventana de Actualizaciones. Ahora mismo hay español, inglés y catalán.
+
+**Un instalador por idioma.** En Windows se publican estos instaladores:
+- `<id>-instalar.cmd` en el idioma original;
+- `<id>-instalar-en.cmd` y `<id>-instalar-ca.cmd` para los demás idiomas.
+
+Linux y macOS de momento tienen un solo instalador, en español.
+
+**La página elige el instalador según el idioma de quien la visita.** Mira, en este orden:
+1. `?lang=xx` en la dirección;
+2. el idioma que eligió antes en la página;
+3. el de su navegador.
+
+La página generada trae también un selector de idioma. En una página propia, py-installer añade `dl/pyi-lang.js` a cada página que enlaza un instalador. Ese script cambia los enlaces de descarga por los del idioma del visitante. Para no añadirlo: `page_script = false` en `[i18n]`.
+
+**Lo que queda instalado.** Junto al programa quedan:
+- `langkit.py`;
+- `lang/` con todos los diccionarios: los del programa (`lang/*.json` de su repo), los de py-installer y los comunes;
+- `lang.json` con el idioma del instalador.
+
+Reinstalar o actualizar no cambia `lang.json`, así que se conserva el idioma que eligió el usuario en el menú «Idioma» del programa. Al desinstalar sin borrar datos, `lang.json` también se conserva. Los diccionarios viajan en `update.json` como un archivo más, de modo que las instalaciones antiguas los reciben con la siguiente actualización.
+
+**En el programa:**
+
+```python
+import langkit
+L = langkit.init(__file__)
+from langkit import t
+menu.add_command(label=t('menu.open'), ...)
+langkit.tk_menu(menubar)          # o langkit.qt_menu(...)
+```
+
+El ejemplo completo está en `example/hola.py`, y cómo pasar un programa a varios idiomas, en el README de lang-kit. Sin `lang/` propio, el programa sigue en español, pero la ventana de Actualizaciones ya sale en su idioma.
+
+**Textos del manifiesto.** La descripción, los tipos de archivo, los motivos de los opcionales y las etiquetas de las descargas extra se traducen así:
+
+```toml
+[i18n.en]
+"Lee y edita Markdown" = "Read and edit Markdown"
+"Documento Markdown" = "Markdown document"
+```
+
+**Otro idioma para el instalador:** añade `lang/pyi.<idioma>.json` aquí, con las mismas claves que `pyi.es.json`. `tests/test_i18n.py` comprueba que no falte ninguna y que cada texto lleve sus variables.
+
 ## Qué deja instalado
 
 | | Programa | Datos del instalador (uv, Python, registro, desinstalador) |
@@ -96,7 +144,10 @@ El instalador hace que el programa los abra. El programa recibe la ruta del arch
 | Linux | `~/.local/share/<folder>/app` | `~/.local/share/<folder>` |
 | macOS | `~/Library/Application Support/<folder>/app` | `~/Library/Application Support/<folder>` |
 
-Junto al programa queda `.venv` (su entorno de Python) e `install_info.json`, con la versión, la URL de origen y las rutas, por si el programa lo necesita para actualizarse.
+Junto al programa quedan:
+- `.venv`, su entorno de Python;
+- `install_info.json`, con la versión, la URL de origen, las rutas y el idioma del instalador, por si el programa lo necesita para actualizarse;
+- `lang.json`, `langkit.py` y `lang/` (ver *Idiomas*).
 
 **Variables opcionales** (`<PREFIJO>` = `id` en mayúsculas con `_`, o `env_prefix`):
 
@@ -121,7 +172,7 @@ py-installer instala `pyi_update.py` junto a cada programa y lo publica en `upda
 - Antes de actualizar, guarda una copia de lo que cambia (se conservan las 5 últimas). Desde ahí se puede volver atrás, incluso desde las copias del actualizador antiguo de cam-ui y widget-arena.
 - Actualiza también los archivos nuevos que se añadan, y reinicia el programa.
 
-**Su propia versión.** El instalador y el actualizador comparten un número de versión, el de py-installer (`VERSION`, ahora 1.3.0; en el código, `pyi_update.PYI_VERSION`). Va aparte de la versión de cada programa. Sale abajo en la ventana de Actualizaciones («Actualizador py-installer 1.3.0»), en `update.json` (`"updater"`) y en `install_info.json`. El actualizador llega a cada programa cuando ese programa publica una versión nueva.
+**Su propia versión.** El instalador y el actualizador comparten un número de versión, el de py-installer (`VERSION`, ahora 1.4.0; en el código, `pyi_update.PYI_VERSION`). Va aparte de la versión de cada programa. Sale abajo en la ventana de Actualizaciones («Actualizador py-installer 1.4.0»), en `update.json` (`"updater"`) y en `install_info.json`. El actualizador llega a cada programa cuando ese programa publica una versión nueva.
 
 **La misma ventana y el mismo comportamiento en todos los programas**, en tkinter (`tk_install`) y en Qt (`qt_install`):
 - Al abrir, mira si hay versión nueva y pregunta. Si se marcó «sin preguntar», la instala sola.

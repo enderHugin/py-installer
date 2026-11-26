@@ -1,0 +1,8 @@
+{
+  "@meta": {
+    "name": "English"
+  },
+  "hola.title": "Hello (py-installer)",
+  "hola.greeting": "Hello! Installed with py-installer.",
+  "hola.version": "version {v} · Python {py}"
+}

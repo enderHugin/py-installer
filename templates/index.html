@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <!-- index.html -->
-<html lang="es">
+<html lang="__SOURCE_LANG__">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>__NAME__ — descargar</title>
+<title>__TITLE__</title>
 <meta name="description" content="__DESCRIPTION__">
 <link rel="icon" href="favicon.png">
 <style>
@@ -30,10 +30,13 @@
   code { font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; word-break: break-all; }
   footer { margin-top: 48px; color: var(--muted); font-size: .85rem; }
   footer a { color: inherit; }
+  .lang { float: right; margin-top: -30px; color: var(--muted); font-size: .85rem; }
+  .lang select { font: inherit; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; margin-left: 4px; }
 </style>
 </head>
 <body>
 <main>
+  <label class="lang" id="langbox" hidden><span data-t="page.lang">Idioma del instalador</span><select id="lang"></select></label>
   <header>
     <img id="icon" src="favicon.png" alt="" hidden>
     <div>
@@ -42,53 +45,103 @@
     </div>
   </header>
 
-  <p class="ver">Versión __VERSION__ · __OS_LIST__</p>
-  <a id="main" class="main-btn" href="#">Descargar</a>
+  <p class="ver" id="ver">__VERSION__ · __OS_LIST__</p>
+  <a id="main" class="main-btn" href="#">↓</a>
   <p id="hint" class="hint"></p>
 
   <div class="grid" id="grid"></div>
 
   <footer>
-    Se instala solo para tu usuario, sin permisos de administrador y sin tener que instalar Python antes.
-    Volver a ejecutar el instalador actualiza el programa.
+    <span data-t="page.footer"></span>
     <span id="repo"></span>
   </footer>
 </main>
 <script>
 (function () {
   var app = __APP_JSON__;
+  // textos de la pagina en cada idioma (lang/pyi.<idioma>.json de py-installer) y el idioma del visitante:
+  // ?lang=xx, el que eligio antes aqui, el de su navegador o el original (mismas reglas que lang-kit)
+  var D = __PAGE_DICTS__, SRC = '__SOURCE_LANG__', STORE = 'langkit.lang';
+  var langs = Object.keys(D);
+  function match(w) {
+    w = String(w || '').replace(/_/g, '-').toLowerCase(); if (!w) return null;
+    for (var i = 0; i < langs.length; i++) if (langs[i].toLowerCase() === w) return langs[i];
+    for (i = 0; i < langs.length; i++) if (langs[i].split('-')[0].toLowerCase() === w.split('-')[0]) return langs[i];
+    return null;
+  }
+  function pick() {
+    var c = [], q = /[?&]lang=([^&#]+)/.exec(location.search);
+    if (q) c.push(decodeURIComponent(q[1]));
+    try { var s = localStorage.getItem(STORE); if (s) c.push(s); } catch (e) { }
+    c = c.concat(navigator.languages || [navigator.language || '']);
+    for (var i = 0; i < c.length; i++) { var g = match(c[i]); if (g) return g; }
+    return SRC;
+  }
+  var lang = pick();
+  function t(k, v) {
+    var s = (D[lang] && D[lang][k]) || (D.en && D.en[k]) || (D[SRC] && D[SRC][k]) || k;
+    return s.replace(/\{([a-z0-9_]+)\}/g, function (m, n) { return v && v[n] !== undefined ? v[n] : m; });
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
   if ('__HAS_ICON__') document.getElementById('icon').hidden = false;
   var ua = navigator.userAgent, plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
   var mine = /Win/i.test(plat + ua) ? 'windows' : /Mac/i.test(plat) && !/iPhone|iPad/.test(ua) ? 'macos' : /Linux|X11/i.test(plat + ua) && !/Android/i.test(ua) ? 'linux' : '';
   var label = { windows: 'Windows', linux: 'Linux', macos: 'macOS' };
-  var how = {
-    windows: 'Abre el archivo descargado. Si Windows avisa («Windows protegió tu PC»), pulsa «Más información» y «Ejecutar de todos modos».',
-    linux: 'En una terminal: <code>bash ~/Descargas/' + (app.installers.linux || '').split('/').pop() + '</code> — o directamente: <code>curl -fsSL ' + (app.installers.linux || '') + ' | bash</code>',
-    macos: 'Descomprime el zip y abre «Instalar ' + app.name + '.command» con clic derecho > Abrir (la primera vez macOS lo pide así).'
-  };
-  var grid = document.getElementById('grid');
-  ['windows', 'linux', 'macos'].forEach(function (os) {
-    var url = app.installers[os], c = document.createElement('div');
-    c.className = 'card' + (url ? '' : ' off');
-    c.innerHTML = '<h3>' + label[os] + '</h3>' + (url
-      ? '<p>' + how[os] + '</p><a href="' + url + '" download>Descargar</a>'
-      : '<p>Aún no disponible para ' + label[os] + '.</p>');
-    grid.appendChild(c);
-  });
-  var btn = document.getElementById('main'), hint = document.getElementById('hint');
-  if (mine && app.installers[mine]) {
-    btn.href = app.installers[mine]; btn.setAttribute('download', '');
-    btn.textContent = 'Descargar para ' + label[mine];
-    hint.innerHTML = how[mine];
-  } else if (mine) {
-    btn.textContent = 'Aún no disponible para ' + label[mine];
-    btn.setAttribute('aria-disabled', 'true');
-    hint.textContent = 'De momento hay instalador para: ' + app.os.map(function (o) { return label[o]; }).join(', ') + '.';
-  } else {
-    btn.textContent = 'Elige tu sistema abajo';
-    btn.href = '#grid';
+
+  function render() {
+    var inst = (app.installers_by_lang && app.installers_by_lang[lang]) || app.installers;
+    document.documentElement.lang = lang;
+    document.title = t('page.title', { app: app.name });
+    var desc = (app.descriptions && app.descriptions[lang]) || app.description;
+    document.querySelector('.desc').textContent = desc;
+    document.getElementById('ver').textContent = t('page.version', { v: app.version, os: app.os.map(function (o) { return label[o]; }).join(', ') });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-t]'), function (n) { n.textContent = t(n.getAttribute('data-t')); });
+    var lin = inst.linux || '';
+    var how = {
+      windows: esc(t('page.how.windows')),
+      linux: esc(t('page.how.linux', { cmd1: '\u0001', cmd2: '\u0002' }))
+        .replace('\u0001', '<code>bash ~/' + esc(t('page.downloads_dir')) + '/' + esc(lin.split('/').pop()) + '</code>')
+        .replace('\u0002', '<code>curl -fsSL ' + esc(lin) + ' | bash</code>'),
+      macos: esc(t('page.how.macos', { file: 'Instalar ' + app.name + '.command' }))
+    };
+    var grid = document.getElementById('grid');
+    grid.innerHTML = '';
+    ['windows', 'linux', 'macos'].forEach(function (os) {
+      var url = inst[os], c = document.createElement('div');
+      c.className = 'card' + (url ? '' : ' off');
+      c.innerHTML = '<h3>' + label[os] + '</h3>' + (url
+        ? '<p>' + how[os] + '</p><a href="' + esc(url) + '" download>' + esc(t('page.download')) + '</a>'
+        : '<p>' + esc(t('page.not_yet', { os: label[os] })) + '.</p>');
+      grid.appendChild(c);
+    });
+    var btn = document.getElementById('main'), hint = document.getElementById('hint');
+    btn.removeAttribute('aria-disabled'); btn.removeAttribute('download');
+    if (mine && inst[mine]) {
+      btn.href = inst[mine]; btn.setAttribute('download', '');
+      btn.textContent = t('page.download_for', { os: label[mine] });
+      hint.innerHTML = how[mine];
+    } else if (mine) {
+      btn.textContent = t('page.not_yet', { os: label[mine] });
+      btn.setAttribute('aria-disabled', 'true');
+      hint.textContent = t('page.only_for', { list: app.os.map(function (o) { return label[o]; }).join(', ') });
+    } else {
+      btn.textContent = t('page.pick_os');
+      btn.href = '#grid';
+      hint.textContent = '';
+    }
+    if (app.repo) document.getElementById('repo').innerHTML = '· <a href="' + esc(app.repo) + '">' + esc(t('page.source')) + '</a>';
   }
-  if (app.repo) document.getElementById('repo').innerHTML = '· <a href="' + app.repo + '">Código fuente</a>';
+
+  // selector de idioma (solo si hay mas de uno)
+  var sel = document.getElementById('lang');
+  if (langs.length > 1) {
+    langs.forEach(function (c) { var o = document.createElement('option'); o.value = c; o.textContent = (D[c]['@meta'] || {}).name || c; sel.appendChild(o); });
+    sel.value = lang;
+    sel.onchange = function () { lang = sel.value; try { localStorage.setItem(STORE, lang); } catch (e) { } render(); };
+    document.getElementById('langbox').hidden = false;
+  }
+  render();
 })();
 </script>
 </body>

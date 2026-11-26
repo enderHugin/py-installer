@@ -700,7 +700,7 @@ def page_lang_js(info):
     try { var s = localStorage.getItem('langkit.lang'); if (s) c.push(s); } catch (e) { }
     c = c.concat(navigator.languages || [navigator.language || '']);
     for (var i = 0; i < c.length; i++) { var g = match(c[i]); if (g) return g; }
-    return D.source;
+    return match('en') || D.source;
   }
   function apply(lang) {
     var a = document.getElementsByTagName('a');
@@ -718,7 +718,8 @@ def page_lang_js(info):
 
 def inject_lang_js(t, urls, rel):
     """Anade pyi-lang.js a una pagina propia que enlaza algun instalador (si no lo lleva ya)."""
-    if 'pyi-lang.js' in t or not any(u and u in t for u in urls.values()):
+    names = ['dl/' + u.rsplit('/', 1)[-1] for u in urls.values() if u]       # tambien enlaces relativos: href="dl/x.cmd"
+    if 'pyi-lang.js' in t or not any(u and u in t for u in list(urls.values()) + names):
         return t
     tag = '<script src="%s" defer></script>\n' % rel.replace(os.sep, '/')
     i = t.lower().rfind('</body>')

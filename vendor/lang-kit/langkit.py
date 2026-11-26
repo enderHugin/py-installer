@@ -16,7 +16,8 @@ Diccionarios: <carpeta del programa>/lang/[<dominio>.]<idioma>.json, por ejemplo
 
 Idioma elegido: <carpeta del programa>/lang.json ({"lang": "ca"}). Lo escribe el instalador con el
 idioma de quien lo descargó y lo cambia el menú «Idioma» del programa. Sin lang.json se usa el
-idioma del sistema. La variable LANGKIT_LANG manda sobre todo (pruebas).
+idioma del sistema; si el programa no lo tiene, ingles y luego el original. La variable LANGKIT_LANG
+manda sobre todo (pruebas).
 
 Si a un idioma le falta un texto, sale en inglés; si tampoco está, en el idioma original (español).
 
@@ -33,7 +34,7 @@ import os
 import re
 import sys
 
-LANGKIT_VERSION = '1.0.0'
+LANGKIT_VERSION = '1.0.2'
 HERE = os.path.dirname(os.path.abspath(__file__))
 SETTINGS = 'lang.json'
 ENV = 'LANGKIT_LANG'
@@ -238,7 +239,8 @@ class Lang:
 
     def _resolve(self, lang=None):
         avail = list(self._dicts)
-        for cand in [lang, os.environ.get(ENV), self._saved()] + system_languages() + [self.source]:
+        # si ninguno de los del sistema esta, el de reserva (ingles) antes que el original: lo entiende mas gente
+        for cand in [lang, os.environ.get(ENV), self._saved()] + system_languages() + list(self.fallback) + [self.source]:
             got = match(cand, avail) if cand else None
             if got:
                 return got
@@ -251,9 +253,10 @@ class Lang:
         self.chain = [x for x in dict.fromkeys(c + list(self.fallback) + [self.source]) if x in self._dicts]
 
     # ---- consulta ------------------------------------------------------------------------
-    def t(self, key, _default=None, **values):
+    def t(self, key, /, _default=None, **values):
         """El texto de `key` en el idioma elegido, con sus {variables} sustituidas.
-        Si es un plural ({"one": ..., "other": ...}) se elige con n= (o count=)."""
+        Si es un plural ({"one": ..., "other": ...}) se elige con n= (o count=). Las variables pueden
+        llamarse como quieras, tambien key: t('x', key='Ctrl+V')."""
         v, code = None, self.code
         for c in self.chain:
             if key in self._dicts[c]:
@@ -357,7 +360,7 @@ def get():
     return _current or init()
 
 
-def t(key, _default=None, **values):
+def t(key, /, _default=None, **values):
     return get().t(key, _default, **values)
 
 

@@ -75,7 +75,7 @@
     try { var s = localStorage.getItem(STORE); if (s) c.push(s); } catch (e) { }
     c = c.concat(navigator.languages || [navigator.language || '']);
     for (var i = 0; i < c.length; i++) { var g = match(c[i]); if (g) return g; }
-    return SRC;
+    return match('en') || SRC;       // un idioma que no hay: mejor ingles que el original
   }
   var lang = pick();
   function t(k, v) {

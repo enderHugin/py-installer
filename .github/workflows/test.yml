@@ -73,16 +73,41 @@ jobs:
           echo OK
 
       # ---- Windows ----------------------------------------------------------------------------
-      - name: Sintaxis (PowerShell incrustado)
+      - name: Sintaxis (PowerShell incrustado, el instalador de cada idioma)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $t = [IO.File]::ReadAllText("_site\dl\hola-pyi-instalar.cmd")
-          $ps = $t.Substring($t.IndexOf('##PS##'))
-          $errs = $null
-          [void][System.Management.Automation.Language.Parser]::ParseInput($ps, [ref]$null, [ref]$errs)
-          if ($errs) { $errs | ForEach-Object { Write-Host $_ }; exit 1 }
-      - name: Instalar (Windows)
+          foreach ($f in Get-ChildItem _site\dl\hola-pyi-instalar*.cmd) {
+            $t = [IO.File]::ReadAllText($f.FullName)
+            $ps = $t.Substring($t.IndexOf('##PS##'))
+            $errs = $null
+            [void][System.Management.Automation.Language.Parser]::ParseInput($ps, [ref]$null, [ref]$errs)
+            if ($errs) { Write-Host $f.Name; $errs | ForEach-Object { Write-Host $_ }; exit 1 }
+            Write-Host ('ok ' + $f.Name)
+          }
+      - name: Instalar en ingles (Windows), como lo bajaria un visitante con el navegador en ingles
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: call _site\dl\hola-pyi-instalar-en.cmd
+      - name: Idioma (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $prog = Join-Path $env:LOCALAPPDATA 'Programs\hola-pyi'
+          $root = Join-Path $env:LOCALAPPDATA 'hola-pyi'
+          if ((Get-Content "$prog\lang.json" -Raw | ConvertFrom-Json).lang -ne 'en') { throw 'lang.json no dice en' }
+          if ((Get-Content "$prog\install_info.json" -Raw | ConvertFrom-Json).lang -ne 'en') { throw 'install_info.json no dice en' }
+          $log = Get-Content "$root\logs\instalacion.log" -Raw -Encoding UTF8
+          if ($log -notmatch 'Downloading Hola py-installer' -or $log -notmatch 'Done\. Hola py-installer is installed') { throw 'el instalador no hablo en ingles' }
+          foreach ($f in 'langkit.py', 'lang\en.json', 'lang\pyi.ca.json', 'lang\common.es.json') { if (-not (Test-Path "$prog\$f")) { throw ('falta ' + $f) } }
+          $env:PYTHONIOENCODING = 'utf-8'
+          $out = & "$prog\.venv\Scripts\python.exe" "$prog\hola.py" --check | Out-String
+          if ($out -notmatch ' en Hello! Installed') { throw ('hola.py no saluda en ingles: ' + $out) }
+          $un = Get-Content "$root\uninstall.ps1" -Raw -Encoding UTF8
+          if ($un -notmatch 'has been uninstalled') { throw 'el desinstalador no esta en ingles' }
+          if ((Get-Item 'HKCU:\Software\Classes\hola-pyi.hola').GetValue('') -ne 'Sample greeting') { throw 'el tipo de archivo no esta en ingles' }
+          'OK'
+      - name: 'Instalar (Windows) encima: el idioma elegido se conserva'
         if: runner.os == 'Windows'
         shell: cmd
         run: call _site\dl\hola-pyi-instalar.cmd
@@ -102,12 +127,14 @@ jobs:
           if ($cmdline -notmatch 'hola\.py" "%1"') { throw ('asociacion: orden mal: ' + $cmdline) }
           if ((Get-Item 'HKCU:\Software\Classes\.hola').GetValue('') -ne 'hola-pyi.hola') { throw 'asociacion: .hola no queda con el programa' }
           if ($null -eq (Get-Item 'HKCU:\Software\Classes\.hola\OpenWithProgids').GetValue('hola-pyi.hola', $null)) { throw 'asociacion: falta en Abrir con' }
+          if ((Get-Content "$prog\lang.json" -Raw | ConvertFrom-Json).lang -ne 'en') { throw 'reinstalar cambio el idioma elegido' }
           Set-Content "$prog\notas.txt" 'editado'
           cmd /c "_site\dl\hola-pyi-instalar.cmd"
           if ($LASTEXITCODE -ne 0) { throw 'la reinstalacion fallo' }
           if ((Get-Content "$prog\notas.txt") -ne 'editado') { throw 'la reinstalacion piso los datos' }
           powershell -NoProfile -ExecutionPolicy Bypass -File "$root\uninstall.ps1" -Si
           if (-not (Test-Path "$prog\notas.txt")) { throw 'la desinstalacion borro los datos que debia conservar' }
+          if (-not (Test-Path "$prog\lang.json")) { throw 'la desinstalacion borro el idioma elegido' }
           if (Test-Path "$prog\.venv") { throw 'la desinstalacion no quito el programa' }
           if (Test-Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\hola-pyi') { throw 'quedo la entrada del registro' }
           if (Test-Path 'HKCU:\Software\Classes\hola-pyi.hola') { throw 'quedo la asociacion' }
@@ -132,6 +159,8 @@ jobs:
         with:
           python-version: '3.12'
       - run: python tests/test_update.py
+      - name: Idiomas (diccionarios, instalador por idioma, pagina)
+        run: python tests/test_i18n.py
       - name: Ventanas de tkinter y Qt, atajo secreto, vigilar sola (Xvfb)
         run: |
           sudo apt-get install -y -qq xvfb libegl1 libxkbcommon0 > /dev/null

@@ -50,6 +50,17 @@ description = "Que hace en una frase"
 # linux_name = "mi-app-instalar.sh"
 # macos_name = "mi-app-instalar-macos.zip"
 
+[i18n]
+# Idiomas (lang-kit): un instalador de Windows por idioma; la pagina ofrece el del visitante y el
+# programa saca sus textos de lang/<idioma>.json (si los tiene). Ver el README de lang-kit.
+# languages = ["es", "en", "ca"]   # por defecto, todos los que tiene py-installer
+# source = "es"                   # idioma original: su instalador conserva el nombre sin sufijo
+# page_script = true              # anadir dl/pyi-lang.js a tu pagina propia
+# enabled = false                 # sin langkit.py ni diccionarios
+# Textos del manifiesto en otros idiomas: "original" = "traduccion"
+# [i18n.en]
+# "Que hace en una frase" = "What it does in one sentence"
+
 # Descargas extra (por ejemplo ffmpeg). Se hacen solo si falta lo extraido; un .zip o .tar.gz.
 # [[extra]]
 # os = "windows"

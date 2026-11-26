@@ -59,7 +59,7 @@ jobs:
           grep -q 'Done. Hola py-installer is installed.' /tmp/en.log
           grep -q '"lang": "en"' "$ROOT/app/lang.json"
           grep -q '"lang": "en"' "$ROOT/app/install_info.json"
-          grep -q 'Uninstall? \[y/N\]' "$ROOT/uninstall.sh"
+          grep -q 'TX_ASK=.*Uninstall' "$ROOT/uninstall.sh"     # va con printf %q: Uninstall\?\ \[y/N\]
           "$ROOT/app/.venv/bin/python" "$ROOT/app/hola.py" --check | grep -q ' en Hello! Installed'
           echo OK
       - name: Instalar (Linux), encima en espanol

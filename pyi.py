@@ -738,7 +738,7 @@ def page_lang_js(info):
 def inject_lang_js(t, urls, rel):
     """Anade pyi-lang.js a una pagina propia que enlaza algun instalador (si no lo lleva ya)."""
     names = ['dl/' + u.rsplit('/', 1)[-1] for u in urls.values() if u]       # tambien enlaces relativos: href="dl/x.cmd"
-    if 'pyi-lang.js' in t or not any(u and u in t for u in list(urls.values()) + names):
+    if re.search(r'<script[^>]+pyi-lang\.js', t) or not any(u and u in t for u in list(urls.values()) + names):
         return t
     tag = '<script src="%s" defer></script>\n' % rel.replace(os.sep, '/')
     i = t.lower().rfind('</body>')

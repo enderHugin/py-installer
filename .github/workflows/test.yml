@@ -42,7 +42,27 @@ jobs:
       - name: Sintaxis (bash)
         if: runner.os != 'Windows'
         run: bash -n _site/dl/hola-pyi-instalar.sh
-      - name: Instalar (Linux)
+      - name: Instalar en ingles (Linux / macOS), como lo bajaria un visitante con el navegador en ingles
+        if: runner.os != 'Windows'
+        run: |
+          for f in _site/dl/hola-pyi-instalar*.sh; do bash -n "$f"; done
+          if [ "$RUNNER_OS" = macOS ]; then
+            mkdir -p /tmp/mac-en && cd /tmp/mac-en && unzip -o "$GITHUB_WORKSPACE/_site/dl/hola-pyi-instalar-macos-en.zip"
+            bash "Install Hola py-installer.command" | tee /tmp/en.log
+            ROOT="$HOME/Library/Application Support/hola-pyi"
+          else
+            bash _site/dl/hola-pyi-instalar-en.sh | tee /tmp/en.log
+            ROOT="$HOME/.local/share/hola-pyi"
+            grep -q '^Comment=py-installer sample program' "$HOME/.local/share/applications/hola-pyi.desktop"
+          fi
+          grep -q 'Downloading Hola py-installer' /tmp/en.log
+          grep -q 'Done. Hola py-installer is installed.' /tmp/en.log
+          grep -q '"lang": "en"' "$ROOT/app/lang.json"
+          grep -q '"lang": "en"' "$ROOT/app/install_info.json"
+          grep -q 'TX_ASK=.*Uninstall' "$ROOT/uninstall.sh"     # va con printf %q: Uninstall\?\ \[y/N\]
+          "$ROOT/app/.venv/bin/python" "$ROOT/app/hola.py" --check | grep -q ' en Hello! Installed'
+          echo OK
+      - name: Instalar (Linux), encima en espanol
         if: runner.os == 'Linux'
         run: bash _site/dl/hola-pyi-instalar.sh
       - name: Instalar (macOS, desde el zip como lo haria un usuario)
@@ -57,6 +77,7 @@ jobs:
           if [ "$RUNNER_OS" = macOS ]; then ROOT="$HOME/Library/Application Support/hola-pyi"; test -d "$HOME/Applications/Hola py-installer.app"
           else ROOT="$HOME/.local/share/hola-pyi"; test -f "$HOME/.local/share/applications/hola-pyi.desktop"; fi
           "$ROOT/app/.venv/bin/python" "$ROOT/app/hola.py" --check
+          grep -q '"lang": "en"' "$ROOT/app/lang.json"            # reinstalar en espanol no cambia el idioma elegido
           if [ "$RUNNER_OS" = macOS ]; then grep -q "<string>hola</string>" "$HOME/Applications/Hola py-installer.app/Contents/Info.plist"
           else grep -q "^MimeType=application/x-hola-pyi-hola;" "$HOME/.local/share/applications/hola-pyi.desktop"
                grep -q '%f' "$HOME/.local/share/applications/hola-pyi.desktop"
@@ -69,6 +90,7 @@ jobs:
           bash "$ROOT/uninstall.sh" --si
           test -f "$ROOT/app/notas.txt"
           test ! -e "$ROOT/app/.venv"
+          test -f "$ROOT/app/lang.json"
           if [ "$RUNNER_OS" = Linux ]; then test ! -e "$HOME/.local/share/mime/packages/hola-pyi.xml"; fi
           echo OK
 
@@ -185,5 +207,5 @@ jobs:
           python3 "$GITHUB_WORKSPACE/pyi.py" build --app . --base https://x.example --out /tmp/s2
           unzip -p /tmp/s2/dl/hola-pyi-instalar-macos.zip > /tmp/mac.sh
           if bash /tmp/mac.sh > /tmp/out.txt 2>&1; then echo "deberia haber fallado"; exit 1; fi
-          grep -q "aun no esta disponible para Linux" /tmp/out.txt
+          grep -q "aún no está disponible para Linux" /tmp/out.txt
           echo OK

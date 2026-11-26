@@ -11,7 +11,7 @@ Uso:
 
 Todo se describe en <carpeta>/py-installer.toml (ver templates/py-installer.toml).
 
-Idiomas (lang-kit): se monta un instalador de Windows por idioma de lang/pyi.<idioma>.json; la pagina
+Idiomas (lang-kit): se monta un instalador por sistema e idioma de lang/pyi.<idioma>.json; la pagina
 ofrece el del idioma del visitante. Junto al programa se instalan langkit.py, sus diccionarios
 (lang/*.json del programa, los de py-installer y los comunes) y lang.json con el idioma elegido.
 """
@@ -113,13 +113,22 @@ def ascii_text(s):
     return unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode()
 
 
-def win_name(m, code):
-    """Nombre del instalador de Windows en ese idioma: el original sin cambios, los demas con -<idioma>."""
-    n = m['names']['windows']
+def os_name(m, os_, code):
+    """Nombre del instalador de ese sistema en ese idioma: el original sin cambios, los demas con -<idioma>."""
+    n = m['names'][os_]
     if code == m['source_lang']:
         return n
     stem, ext = os.path.splitext(n)
     return '%s-%s%s' % (stem, code, ext)
+
+
+def win_name(m, code):
+    return os_name(m, 'windows', code)
+
+
+def mac_command(m, code):
+    """Nombre del .command que va dentro del zip de macOS ("Instalar Mi App.command")."""
+    return pyi_dict(code, m['source_lang'])['inst.mac_command'].replace('{app}', m['link_name'])
 
 
 # ---------------------------------------------------------------------------------------------
@@ -395,7 +404,10 @@ def sh_arr(items):
     return '(' + ' '.join(sh_str(i) for i in items) + ')'
 
 
-def sh_config(m, base, version, has):
+def sh_config(m, base, version, has, code=None):
+    code = code or m['source_lang']
+    T = pyi_dict(code, m['source_lang'])
+    tx = lambda t: tr_text(m, code, t)
     extras = [x for x in m['extras'] if set(x['os']) & {'linux', 'macos', 'any'}]
     osmap = lambda x: ' '.join({'macos': 'mac'}.get(o, o) for o in x['os'])
     for x in extras:
@@ -408,7 +420,8 @@ def sh_config(m, base, version, has):
         'BASE=%s' % sh_str(base),
         'APP_ID=%s' % sh_str(m['id']),
         'APP_NAME=%s' % sh_str(m['name']),
-        'DESCRIPTION=%s' % sh_str(m['description']),
+        'DESCRIPTION=%s' % sh_str(tx(m['description'])),
+        'LANG_CODE=%s' % sh_str(code),
         'BUNDLE_OWNER=%s' % sh_str(re.sub(r'[^A-Za-z0-9-]', '-', m['owner']).lower()),
         'ENTRY=%s' % sh_str(m['entry']),
         'FILES=%s' % sh_arr(m['files']),
@@ -426,7 +439,7 @@ def sh_config(m, base, version, has):
         'HAS_ICNS=%s' % (1 if has['icns'] else 0),
         'REQUIRED=%s' % sh_arr(m['required']),
         'OPTIONAL_PKG=%s' % sh_arr(o['pkg'] for o in m['optional']),
-        'OPTIONAL_WHY=%s' % sh_arr(o['why'] or 'opcional' for o in m['optional']),
+        'OPTIONAL_WHY=%s' % sh_arr(tx(o['why']) or T['inst.optional'] for o in m['optional']),
         'CHECK_CODE=%s' % sh_str(m['check_code']),
         'CHECK_ENV=%s' % sh_arr(f'{k}={v}' for k, v in m['check_env'].items()),
         'DATA_ZIP=%s' % sh_str('data.zip' if m['data_zip'] else ''),
@@ -435,22 +448,28 @@ def sh_config(m, base, version, has):
         'EX_URL=%s' % sh_arr(x['url'] for x in extras),
         'EX_EXTRACT=%s' % sh_arr(' '.join(x['extract']) for x in extras),
         'EX_TO=%s' % sh_arr(x['to'] for x in extras),
-        'EX_LABEL=%s' % sh_arr(x['label'] for x in extras),
+        'EX_LABEL=%s' % sh_arr(tx(x['label']) for x in extras),
         'EX_REQ=%s' % sh_arr('1' if x['required'] else '0' for x in extras),
         'POST_INSTALL=%s' % sh_str(m['post_install']),
         'ASSOC_MIMES=%s' % sh_str(' '.join(dict.fromkeys(mm for x in m['associate'] for mm in x['mimes']))),
         'ASSOC_OWN_MIMES=%s' % sh_str(' '.join(dict.fromkeys(mm for x in m['associate'] for mm in x['mimes'] if mm.startswith('application/x-%s-' % m['id'])))),
-        'ASSOC_MIME_XML=%s' % sh_str(mime_xml(m)),
-        'MAC_DOC_TYPES=%s' % sh_str(mac_doc_types(m)),
+        'ASSOC_MIME_XML=%s' % sh_str(mime_xml(m, tx)),
+        'MAC_DOC_TYPES=%s' % sh_str(mac_doc_types(m, tx)),
         'ASSOC_EXTS=%s' % sh_str(' '.join(e for x in m['associate'] for e in x['exts'])),
+        '# textos de este instalador (lang/pyi.%s.json de py-installer)' % code,
+        '_tx() {',
+        '  case "$1" in',
+    ] + ['    %s) printf %%s %s ;;' % (sh_str(k), sh_str(v)) for k, v in sorted(T.items()) if k.startswith(('inst.', 'uninst.'))] + [
+        '  esac',
+        '}',
         '# --- fin de los datos del programa ---',
     ]
     return '\n'.join(lines)
 
 
-def mime_xml(m):
+def mime_xml(m, tx=lambda t: t):
     """Linux: definicion de los tipos de archivo propios del programa (los que no tienen uno conocido)."""
-    own = [(e, mm, x['desc']) for x in m['associate'] for e, mm in zip(x['exts'], x['mimes'])
+    own = [(e, mm, tx(x['desc'])) for x in m['associate'] for e, mm in zip(x['exts'], x['mimes'])
            if mm.startswith('application/x-%s-' % m['id'])]
     if not own:
         return ''
@@ -463,7 +482,7 @@ def mime_xml(m):
     return '\n'.join(out) + '\n'
 
 
-def mac_doc_types(m):
+def mac_doc_types(m, tx=lambda t: t):
     """macOS: tipos de archivo que declara la .app (para "Abrir con" y doble clic)."""
     if not m['associate']:
         return ''
@@ -471,7 +490,7 @@ def mac_doc_types(m):
     out = ['<key>CFBundleDocumentTypes</key><array>']
     for x in m['associate']:
         own = all(mm.startswith('application/x-%s-' % m['id']) for mm in x['mimes'])
-        out.append('<dict><key>CFBundleTypeName</key><string>%s</string>' % escape(x['desc']))
+        out.append('<dict><key>CFBundleTypeName</key><string>%s</string>' % escape(tx(x['desc'])))
         out.append('<key>CFBundleTypeRole</key><string>%s</string>' % ('Editor' if x['role'] == 'editor' else 'Viewer'))
         out.append('<key>LSHandlerRank</key><string>%s</string>' % ('Owner' if own else 'Alternate'))
         out.append('<key>CFBundleTypeExtensions</key><array>%s</array>' % ''.join('<string>%s</string>' % e[1:] for e in x['exts']))
@@ -581,28 +600,27 @@ def build(app_dir, base, out, repo_url='', log=print):
                 fh.write(txt)
             by_lang[code]['windows'] = f'{base}/dl/{name}'
         urls['windows'] = by_lang[m['source_lang']]['windows']
-    if 'linux' in m['os'] or 'macos' in m['os']:
-        txt = render('install-unix.sh', '# @@PYI_CONFIG@@', sh_config(m, base, version, has))
+    for code in m['languages'] if ('linux' in m['os'] or 'macos' in m['os']) else []:
+        txt = render('install-unix.sh', '# @@PYI_CONFIG@@', sh_config(m, base, version, has, code))
         if 'linux' in m['os']:
-            name = m['names']['linux']
+            name = os_name(m, 'linux', code)
             p = os.path.join(dl, name)
             with open(p, 'w', encoding='utf-8', newline='\n') as fh:
                 fh.write(txt)
             os.chmod(p, 0o755)
-            urls['linux'] = f'{base}/dl/{name}'
+            by_lang[code]['linux'] = f'{base}/dl/{name}'
         if 'macos' in m['os']:
-            name = m['names']['macos']
-            zi = zipfile.ZipInfo(f'Instalar {m["link_name"]}.command', (2020, 1, 1, 0, 0, 0))
+            name = os_name(m, 'macos', code)
+            zi = zipfile.ZipInfo(mac_command(m, code), (2020, 1, 1, 0, 0, 0))
             zi.compress_type = zipfile.ZIP_DEFLATED
             zi.external_attr = (0o100755 << 16)   # ejecutable al descomprimir con el Finder
             zi.create_system = 3
             with zipfile.ZipFile(os.path.join(dl, name), 'w') as z:
                 z.writestr(zi, txt.encode('utf-8'))
-            urls['macos'] = f'{base}/dl/{name}'
-    for code in m['languages']:                    # Linux y macOS: de momento, un solo instalador (espanol)
-        for o in ('linux', 'macos'):
-            if o in urls:
-                by_lang[code].setdefault(o, urls[o])
+            by_lang[code]['macos'] = f'{base}/dl/{name}'
+    for o in ('linux', 'macos'):
+        if o in by_lang[m['source_lang']]:
+            urls[o] = by_lang[m['source_lang']][o]
 
     # update.json: lo que lee "Buscar actualizaciones" en el programa
     notes = ''
@@ -621,7 +639,8 @@ def build(app_dir, base, out, repo_url='', log=print):
     info = {'id': m['id'], 'name': m['name'], 'description': m['description'], 'version': version,
             'pack': pack, 'os': m['os'], 'installers': urls, 'repo': repo_url, 'py_installer': pyi_version(),
             'languages': m['languages'], 'source_lang': m['source_lang'], 'installers_by_lang': by_lang,
-            'descriptions': {c: tr_text(m, c, m['description']) for c in m['languages']}}
+            'descriptions': {c: tr_text(m, c, m['description']) for c in m['languages']},
+            'mac_commands': {c: mac_command(m, c) for c in m['languages']} if 'macos' in m['os'] else {}}
     with open(os.path.join(dl, 'app.json'), 'w', encoding='utf-8') as fh:
         json.dump(info, fh, ensure_ascii=False, indent=2)
 

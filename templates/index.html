@@ -103,7 +103,7 @@
       linux: esc(t('page.how.linux', { cmd1: '\u0001', cmd2: '\u0002' }))
         .replace('\u0001', '<code>bash ~/' + esc(t('page.downloads_dir')) + '/' + esc(lin.split('/').pop()) + '</code>')
         .replace('\u0002', '<code>curl -fsSL ' + esc(lin) + ' | bash</code>'),
-      macos: esc(t('page.how.macos', { file: 'Instalar ' + app.name + '.command' }))
+      macos: esc(t('page.how.macos', { file: (app.mac_commands && app.mac_commands[lang]) || ('Instalar ' + app.name + '.command') }))
     };
     var grid = document.getElementById('grid');
     grid.innerHTML = '';

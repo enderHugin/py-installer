@@ -89,9 +89,23 @@ for key, names in used:
     elif set(VAR.findall(es[key])) - names:
         ok(False, 'install-windows.cmd: a "%s" le faltan variables: %s' % (key, ', '.join(sorted(set(VAR.findall(es[key])) - names))))
 need = {k for k in es if k.startswith(('inst.', 'uninst.'))} - {'inst.title_suffix', 'inst.optional'}
-ok(not need - {k for k, _ in used}, 'todas las claves inst.*/uninst.* se usan (%s)' % sorted(need - {k for k, _ in used})[:5])
 leftover = [ln for ln in tpl.splitlines() if re.search(r"(Say|Write-Host|throw)\s*\(?\s*'[^'_]*[a-z]{3,} [a-z]{3,}", ln)]
 ok(not leftover, 'no quedan textos escritos a mano en el instalador: %s' % leftover[:2])
+
+sh = open(os.path.join(ROOT, 'templates', 'install-unix.sh'), encoding='utf-8').read()
+sh_used = set()
+for line in sh.splitlines():
+    for m in re.finditer(r'\$\(T ([a-z0-9_.]+)', line):
+        key, names = m.group(1), set(re.findall(r'(?<=\s)([a-z_]+)=', line[m.end():]))
+        sh_used.add(key)
+        if key not in es:
+            ok(False, 'install-unix.sh usa "%s", que no esta en pyi.es.json' % key)
+        elif set(VAR.findall(es[key])) - names:
+            ok(False, 'install-unix.sh: a "%s" le faltan variables: %s' % (key, ', '.join(sorted(set(VAR.findall(es[key])) - names))))
+ok(len(sh_used) > 40, 'el instalador de Linux y macOS saca sus textos del diccionario (%d)' % len(sh_used))
+ok(not need - {k for k, _ in used} - sh_used - {'inst.mac_command'}, 'todas las claves inst.*/uninst.* se usan en algun instalador')
+leftover = [ln for ln in sh.splitlines() if re.search(r'(say|die|echo) "[A-Za-z¿]', ln)]
+ok(not leftover, 'no quedan textos escritos a mano en el instalador de Linux y macOS: %s' % leftover[:2])
 
 src = open(os.path.join(ROOT, 'pyi_update.py'), encoding='utf-8').read()
 for key, kw in re.findall(r"""_t\('([a-z0-9_.]+)'((?:, [a-z_]+=[^,)]+(?:\([^)]*\))?)*)\)""", src):
@@ -124,10 +138,29 @@ en = open(os.path.join(dl, 'hola-pyi-instalar-en.cmd'), encoding='utf-8').read()
 ok("'Downloading {app}'" in en and "$Description = 'py-installer sample program'" in en and "desc = 'Sample greeting'" in en,
    'en: textos del instalador y del manifiesto traducidos')
 ok("why = 'test of an optional package that fails'" in en, 'en: el motivo de un opcional, traducido')
+for c in langs:
+    sfx = '' if c == 'es' else '-' + c
+    p = os.path.join(dl, 'hola-pyi-instalar%s.sh' % sfx)
+    ok(os.path.exists(p) and "LANG_CODE='%s'" % c in open(p, encoding='utf-8').read(), 'instalador de Linux en %s' % c)
+    r = subprocess.run(['bash', '-n', p], capture_output=True, text=True) if shutil.which('bash') else None
+    ok(r is None or r.returncode == 0, 'hola-pyi-instalar%s.sh: sintaxis de bash' % sfx)
+    import zipfile
+    names = zipfile.ZipFile(os.path.join(dl, 'hola-pyi-instalar-macos%s.zip' % sfx)).namelist()
+    ok(names == [pyi.pyi_dict(c)['inst.mac_command'].replace('{app}', 'Hola py-installer')], 'zip de macOS en %s: %s' % (c, names))
+sh_en = open(os.path.join(dl, 'hola-pyi-instalar-en.sh'), encoding='utf-8').read()
+ok("'inst.step.download') printf %s 'Downloading {app}' ;;" in sh_en and "DESCRIPTION='py-installer sample program'" in sh_en
+   and '<comment>Sample greeting</comment>' in sh_en, 'Linux en: textos del instalador y del manifiesto traducidos')
+if shutil.which('bash'):   # la funcion T del instalador, tal cual, con el bash que haya (macOS trae el 3.2)
+    head = sh_en[:sh_en.index('opt() {')]
+    r = subprocess.run(['bash', '-c', head.split('set -euo pipefail', 1)[1] + '\nT inst.extra_fail_unix label=ffmpeg url=https://x/y files="a b" dir="/c d"; echo; T inst.ready app="A {app} & B"; echo; T no.existe'],
+                       capture_output=True, text=True)
+    ok(r.stdout.splitlines() == ['ffmpeg: could not be prepared. You can download it from https://x/y and copy a b to /c d; then run the installer again.',
+                                 'Done. A {app} & B is installed.', 'no.existe'], 'T de bash: variables, valores raros y clave que no existe: %r' % r.stdout)
 info = json.load(open(os.path.join(dl, 'app.json'), encoding='utf-8'))
 ok(info['languages'][0] == 'es' and set(info['languages']) == set(langs), 'app.json: idiomas, el original primero')
 ok(info['installers_by_lang']['en']['windows'].endswith('/dl/hola-pyi-instalar-en.cmd') and
-   info['installers_by_lang']['ca']['linux'] == info['installers']['linux'], 'app.json: instaladores por idioma')
+   info['installers_by_lang']['ca']['linux'].endswith('/dl/hola-pyi-instalar-ca.sh') and info['installers']['linux'].endswith('/dl/hola-pyi-instalar.sh')
+   and info['mac_commands']['en'] == 'Install Hola py-installer.command', 'app.json: instaladores por idioma')
 upd = json.load(open(os.path.join(dl, 'update.json'), encoding='utf-8'))
 for f in ('langkit.py', 'lang/es.json', 'lang/en.json', 'lang/pyi.ca.json', 'lang/common.en.json', 'pyi_update.py'):
     ok(f in upd['files'], 'update.json incluye %s' % f)

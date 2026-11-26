@@ -14,29 +14,42 @@ set -euo pipefail
 
 # @@PYI_CONFIG@@
 
+# textos en el idioma de este instalador (LANG_CODE y _tx: los pone py-installer desde lang/pyi.<idioma>.json)
+# T clave [nombre=valor ...]: el texto con sus {variables} sustituidas (vale para el bash 3.2 de macOS)
+T() {
+  local k="$1" s kv p v out; shift
+  s="$(_tx "$k")"; [ -n "$s" ] || s="$k"
+  for kv in "$@"; do
+    p="{${kv%%=*}}"; v="${kv#*=}"; out=""
+    while [[ "$s" == *"$p"* ]]; do out="$out${s%%"$p"*}$v"; s="${s#*"$p"}"; done
+    s="$out$s"
+  done
+  printf '%s' "$s"
+}
+
 opt() { local v="${ENV_PREFIX}_$1"; printf '%s' "${!v:-}"; }
 [ -n "$(opt BASE_URL)" ] && BASE="$(opt BASE_URL)"
 BASE="${BASE%/}"; DL="$BASE/dl"
 
 say()  { printf '      %s\n' "$*"; }
 step() { printf '\n\033[36m[%s/5] %s\033[0m\n' "$1" "$2"; }
-die()  { printf '\n\033[31m  ERROR: %s\033[0m\n' "$*" >&2; [ -n "${LOG:-}" ] && printf '  Registro: %s\n' "$LOG" >&2; exit 1; }
-trap 'die "El instalador se detuvo (linea $LINENO). Puedes volver a ejecutarlo: continua donde lo dejo."' ERR
+die()  { printf '\n\033[31m  %s\033[0m\n' "$(T inst.error msg="$*")" >&2; [ -n "${LOG:-}" ] && printf '  %s\n' "$(T inst.log_at path="$LOG")" >&2; exit 1; }
+trap 'die "$(T inst.stopped line=$LINENO)"' ERR
 
 OS="$(uname -s)"; ARCH="$(uname -m)"
 case "$ARCH" in
   x86_64|amd64)  UVARCH=x86_64 ;;
   aarch64|arm64) UVARCH=aarch64 ;;
-  *) die "Arquitectura no soportada: $ARCH" ;;
+  *) die "$(T inst.arch_unsupported arch="$ARCH")" ;;
 esac
 case "$OS" in
   Linux)  KIND=linux; TRIPLE="$UVARCH-unknown-linux-gnu"
-          [ "$SUPPORTS_LINUX" = 1 ] || die "$APP_NAME aun no esta disponible para Linux."
+          [ "$SUPPORTS_LINUX" = 1 ] || die "$(T inst.not_for_os app="$APP_NAME" os=Linux)"
           ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/$FOLDER"; PROG="$ROOT/app" ;;
   Darwin) KIND=mac;   TRIPLE="$UVARCH-apple-darwin"
-          [ "$SUPPORTS_MACOS" = 1 ] || die "$APP_NAME aun no esta disponible para macOS."
+          [ "$SUPPORTS_MACOS" = 1 ] || die "$(T inst.not_for_os app="$APP_NAME" os=macOS)"
           ROOT="$HOME/Library/Application Support/$FOLDER"; PROG="$ROOT/app" ;;
-  *) die "Sistema no soportado: $OS (este instalador es para Linux y macOS)" ;;
+  *) die "$(T inst.os_unsupported os="$OS")" ;;
 esac
 if [ "$KIND" = linux ] && { ldd --version 2>&1 | grep -qi musl; }; then
   TRIPLE="$UVARCH-unknown-linux-musl"
@@ -49,82 +62,83 @@ fetch() {   # fetch URL DESTINO (con reintentos)
   for n in 1 2 3; do
     if command -v curl >/dev/null 2>&1; then curl -fsSL --retry 2 --connect-timeout 20 -o "$dest" "$url" && [ -s "$dest" ] && return 0
     elif command -v wget >/dev/null 2>&1; then wget -q -T 20 -O "$dest" "$url" && [ -s "$dest" ] && return 0
-    else die "Hace falta curl o wget para descargar."; fi
+    else die "$(T inst.need_curl)"; fi
     sleep $((2 * n))
   done
   return 1
 }
-need() { fetch "$1" "$2" || die "No se pudo descargar $1. Comprueba tu conexion a internet."; }
+need() { fetch "$1" "$2" || die "$(T inst.dl_failed_sh url="$1")"; }
 
 printf '\n\033[33m  ==============================\n        %s\n  ==============================\033[0m\n' "$APP_NAME"
-echo "  Se instala solo para tu usuario. No hace falta tener Python ni ser administrador."
-echo "  La primera vez descarga Python y las librerias; puede tardar un par de minutos."
+echo "  $(T inst.intro1_unix)"
+echo "  $(T inst.intro2)"
 
 mkdir -p "$ROOT" "$BIN" "$RT" "$STAGE" "$PROG" "$ROOT/logs"
 LOG="$ROOT/logs/instalacion.log"
 exec > >(tee -a "$LOG") 2>&1            # todo lo que sale por pantalla queda tambien en el registro
-echo "=== $(date '+%Y-%m-%d %H:%M:%S') ==="; echo "$(uname -srm) | bash $BASH_VERSION | usuario $(id -un)"
-say "registro de esta instalacion: $LOG"
-say "programa en $PROG"
+echo "=== $(date '+%Y-%m-%d %H:%M:%S') ==="; echo "$(T inst.sysinfo_unix os="$(uname -srm)" bash="$BASH_VERSION" user="$(id -un)")"
+say "$(T inst.log path="$LOG")"
+say "$(T inst.prog_at path="$PROG")"
+say "$(T inst.lang lang="$LANG_CODE")"
 pkill -f "$PROG/$ENTRY" 2>/dev/null || true
 
 # --- 1) uv ---------------------------------------------------------------------------------------------------------
-step 1 "Preparando el gestor de Python (uv)"
+step 1 "$(T inst.step.uv)"
 if [ -n "$(opt UV)" ] && [ -x "$(opt UV)" ]; then
-  UV="$(opt UV)"; say "usando $UV"
+  UV="$(opt UV)"; say "$(T inst.using path="$UV")"
 else
   UV="$BIN/uv"
   if [ -x "$UV" ] && "$UV" --version >/dev/null 2>&1; then
-    say "ya estaba instalado"
+    say "$(T inst.already)"
   else
-    T="$(mktemp -d)"
-    need "https://github.com/astral-sh/uv/releases/latest/download/uv-$TRIPLE.tar.gz" "$T/uv.tgz"
-    tar -xzf "$T/uv.tgz" -C "$T"
-    F="$(find "$T" -type f -name uv | head -n 1)"
-    [ -n "$F" ] || die "El archivo descargado de uv no contiene el programa."
-    cp "$F" "$UV"; chmod +x "$UV"; rm -rf "$T"
-    say "listo"
+    TMPD="$(mktemp -d)"
+    need "https://github.com/astral-sh/uv/releases/latest/download/uv-$TRIPLE.tar.gz" "$TMPD/uv.tgz"
+    tar -xzf "$TMPD/uv.tgz" -C "$TMPD"
+    F="$(find "$TMPD" -type f -name uv | head -n 1)"
+    [ -n "$F" ] || die "$(T inst.no_uv_bin)"
+    cp "$F" "$UV"; chmod +x "$UV"; rm -rf "$TMPD"
+    say "$(T inst.done)"
   fi
 fi
 
 # --- 2) Python propio ----------------------------------------------------------------------------------------------
-step 2 "Preparando Python $PY_VER"
+step 2 "$(T inst.step.python ver="$PY_VER")"
 export UV_CACHE_DIR="$ROOT/cache" UV_PYTHON_BIN_DIR="$BIN/python" UV_PYTHON_PREFERENCE=only-managed UV_PYTHON_DOWNLOADS=automatic UV_NO_PROGRESS=1
 if [ -n "$(opt PYTHON)" ] && [ -x "$(opt PYTHON)" ]; then
-  PY="$(opt PYTHON)"; say "usando $PY"
+  PY="$(opt PYTHON)"; say "$(T inst.using path="$PY")"
 else
   export UV_PYTHON_INSTALL_DIR="$RT"
   # una carpeta a medias de un intento anterior hace fallar a uv: se borra
   for d in "$RT"/cpython-"$PY_VER"*; do if [ -d "$d" ] && [ ! -e "$d/lib" ]; then rm -rf "$d"; fi; done
   if ! "$UV" python install "$PY_VER"; then
-    say "reintentando con conexion lenta..."
-    UV_HTTP_TIMEOUT=300 UV_CONCURRENT_DOWNLOADS=1 "$UV" python install "$PY_VER" || die "No se pudo conseguir Python $PY_VER (¿proxy o cortafuegos que bloquea GitHub?)."
+    say "$(T inst.retry_slow)"
+    UV_HTTP_TIMEOUT=300 UV_CONCURRENT_DOWNLOADS=1 "$UV" python install "$PY_VER" || die "$(T inst.no_python_unix ver="$PY_VER")"
   fi
   PY="$("$UV" python find "$PY_VER" | head -n 1)"
-  [ -x "$PY" ] || die "No se encontro el Python $PY_VER recien instalado."
+  [ -x "$PY" ] || die "$(T inst.py_not_found ver="$PY_VER")"
   say "$PY"
 fi
 case "$CHECK_CODE" in *tkinter*)
-  "$PY" -c "import tkinter; tkinter.Tcl()" >/dev/null 2>&1 || die "El Python descargado no trae tkinter funcionando (Tcl/Tk). Vuelve a ejecutar el instalador; si sigue fallando, cuentalo en $ISSUES_URL" ;;
+  "$PY" -c "import tkinter; tkinter.Tcl()" >/dev/null 2>&1 || die "$(T inst.no_tk url="$ISSUES_URL")" ;;
 esac
 
 # --- 3) el programa ------------------------------------------------------------------------------------------------
-step 3 "Descargando $APP_NAME"
+step 3 "$(T inst.step.download app="$APP_NAME")"
 for f in "${FILES[@]}" VERSION; do need "$DL/$f" "$STAGE/$f"; done
-if [ "$HAS_PNG" = 1 ]; then fetch "$DL/icon.png" "$STAGE/icon.png" || say "no se pudo bajar el icono (se sigue sin el)"; fi
+if [ "$HAS_PNG" = 1 ]; then fetch "$DL/icon.png" "$STAGE/icon.png" || say "$(T inst.no_icon)"; fi
 if [ "$KIND" = mac ] && [ "$HAS_ICNS" = 1 ]; then fetch "$DL/icon.icns" "$STAGE/icon.icns" || true; fi
 if [ -n "$DATA_ZIP" ]; then
   if fetch "$DL/$DATA_ZIP" "$STAGE/$DATA_ZIP"; then
     "$PY" -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "$STAGE/$DATA_ZIP" "$STAGE/data" || rm -rf "$STAGE/data"
   else
-    say "no se pudieron bajar los datos iniciales (se omiten)"
+    say "$(T inst.no_data_unix)"
   fi
 fi
 VERSION="$(tr -d '[:space:]' < "$STAGE/VERSION")"
-say "version $VERSION"
+say "$(T inst.version v="$VERSION")"
 
 # --- 4) entorno con sus librerias (la parte lenta) -----------------------------------------------------------------
-step 4 "Instalando el programa y sus librerias"
+step 4 "$(T inst.step.install)"
 for f in "${FILES[@]}" VERSION; do mkdir -p "$(dirname "$PROG/$f")"; cp "$STAGE/$f" "$PROG/$f"; done
 if [ -f "$STAGE/icon.png" ]; then cp "$STAGE/icon.png" "$PROG/icon.png"; fi
 if [ -d "$STAGE/data" ]; then   # los datos iniciales no pisan lo que ya tengas
@@ -134,29 +148,29 @@ if [ -d "$STAGE/data" ]; then   # los datos iniciales no pisan lo que ya tengas
 fi
 VENV="$PROG/$VENV_DIR"; VPY="$VENV/bin/python"
 if [ -x "$VPY" ] && "$VPY" -c "import pip, sys; assert '%d.%d' % sys.version_info[:2] == '$PY_VER'" >/dev/null 2>&1; then
-  say "el entorno ya estaba"
+  say "$(T inst.venv_ok)"
 else
   rm -rf "$VENV"
-  "$UV" venv --seed --python "$PY" "$VENV" || die "No se pudo crear el entorno de Python."
+  "$UV" venv --seed --python "$PY" "$VENV" || die "$(T inst.venv_fail_unix)"
 fi
 install_pkgs() { "$UV" pip install --python "$VPY" --upgrade -q "$@" || "$VPY" -m pip install --disable-pip-version-check --no-cache-dir -q --upgrade "$@"; }
 if [ "${#REQUIRED[@]}" -gt 0 ]; then
-  say "librerias: ${REQUIRED[*]}"
-  install_pkgs "${REQUIRED[@]}" || die "Fallo al instalar las librerias (${REQUIRED[*]})."
+  say "$(T inst.libs list="${REQUIRED[*]}")"
+  install_pkgs "${REQUIRED[@]}" || die "$(T inst.libs_fail_unix list="${REQUIRED[*]}")"
 fi
 for ((i = 0; i < ${#OPTIONAL_PKG[@]}; i++)); do
-  install_pkgs "${OPTIONAL_PKG[$i]}" || say "no se pudo instalar ${OPTIONAL_PKG[$i]} (opcional; ${OPTIONAL_WHY[$i]})"
+  install_pkgs "${OPTIONAL_PKG[$i]}" || say "$(T inst.opt_fail_unix pkg="${OPTIONAL_PKG[$i]}" why="${OPTIONAL_WHY[$i]}")"
 done
 for ((i = 0; i < ${#EX_URL[@]}; i++)); do
   case " ${EX_OS[$i]} " in *" $KIND "*|*" any "*) ;; *) continue ;; esac
   DST="$PROG/${EX_TO[$i]}"; MISSING=0
   for n in ${EX_EXTRACT[$i]}; do if [ ! -e "$DST/$n" ]; then MISSING=1; fi; done
-  if [ "$MISSING" = 0 ]; then say "${EX_LABEL[$i]}: ya estaba"; continue; fi
-  say "descargando ${EX_LABEL[$i]}..."
+  if [ "$MISSING" = 0 ]; then say "$(T inst.extra_ok label="${EX_LABEL[$i]}")"; continue; fi
+  say "$(T inst.extra_dl label="${EX_LABEL[$i]}")"
   ARC="$ROOT/extra.bin"
-  if fetch "${EX_URL[$i]}" "$ARC" && "$PY" - "$ARC" "$DST" ${EX_EXTRACT[$i]} <<'PYEOF'
+  if fetch "${EX_URL[$i]}" "$ARC" && "$PY" - "$ARC" "$DST" "$(T inst.extra_missing list=)" ${EX_EXTRACT[$i]} <<'PYEOF'
 import os, stat, sys, tarfile, zipfile
-arc, dst, names = sys.argv[1], sys.argv[2], sys.argv[3:]
+arc, dst, msg, names = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4:]
 os.makedirs(dst, exist_ok=True)
 got = set()
 if zipfile.is_zipfile(arc):
@@ -175,26 +189,26 @@ for b in got:
     p = os.path.join(dst, b); os.chmod(p, os.stat(p).st_mode | stat.S_IXUSR)
 missing = [n for n in names if n not in got]
 if missing:
-    sys.exit('faltan en el archivo descargado: ' + ', '.join(missing))
+    sys.exit(msg + ', '.join(missing))
 PYEOF
   then rm -f "$ARC"
   else
     rm -f "$ARC"
-    MSG="${EX_LABEL[$i]}: no se pudo preparar. Puedes bajarlo de ${EX_URL[$i]} y copiar ${EX_EXTRACT[$i]} a $DST; luego vuelve a ejecutar el instalador."
-    if [ "${EX_REQ[$i]}" = 1 ]; then die "$MSG"; else say "aviso: $MSG"; fi
+    MSG="$(T inst.extra_fail_unix label="${EX_LABEL[$i]}" url="${EX_URL[$i]}" files="${EX_EXTRACT[$i]}" dir="$DST")"
+    if [ "${EX_REQ[$i]}" = 1 ]; then die "$MSG"; else say "$(T inst.warn msg="$MSG")"; fi
   fi
 done
 if [ -n "$POST_INSTALL" ]; then
-  say "paso propio del programa..."
+  say "$(T inst.post)"
   if { : < /dev/tty; } 2>/dev/null; then   # con "curl ... | bash" la entrada no es la terminal: se le devuelve para que pueda preguntar
-    "$VPY" -u "$PROG/$POST_INSTALL" "$PROG" < /dev/tty || die "El paso propio del programa ($POST_INSTALL) fallo."
+    "$VPY" -u "$PROG/$POST_INSTALL" "$PROG" < /dev/tty || die "$(T inst.post_fail file="$POST_INSTALL")"
   else
-    "$VPY" -u "$PROG/$POST_INSTALL" "$PROG" || die "El paso propio del programa ($POST_INSTALL) fallo."
+    "$VPY" -u "$PROG/$POST_INSTALL" "$PROG" || die "$(T inst.post_fail file="$POST_INSTALL")"
   fi
 fi
 
 # --- 5) accesos, desinstalador y comprobacion ----------------------------------------------------------------------
-step 5 "Terminando: accesos y desinstalador"
+step 5 "$(T inst.step.finish_unix)"
 SHORTCUTS=()
 if [ "$KIND" = linux ]; then
   APPS="${XDG_DATA_HOME:-$HOME/.local/share}/applications"; mkdir -p "$APPS"
@@ -244,7 +258,7 @@ DEOF
   if [ -n "$ASSOC_OWN_MIMES" ] && command -v xdg-mime >/dev/null 2>&1; then
     for mm in $ASSOC_OWN_MIMES; do xdg-mime default "$APP_ID.desktop" "$mm" 2>/dev/null || true; done
   fi
-  [ -n "$ASSOC_EXTS" ] && say "tipos de archivo: $ASSOC_EXTS (en \"Abrir con\")"
+  [ -n "$ASSOC_EXTS" ] && say "$(T inst.assoc_openwith exts="$ASSOC_EXTS")"
   LAUNCH=(nohup setsid "$VPY" "$PROG/$ENTRY")
 else
   mkdir -p "$HOME/Applications"
@@ -279,7 +293,7 @@ LAEOF
     if [ -n "$MAC_DOC_TYPES" ]; then              # que macOS sepa ya que tipos abre (para "Abrir con")
       LSR=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
       [ -x "$LSR" ] && "$LSR" -f "$APP" >/dev/null 2>&1 || true
-      say "tipos de archivo: $ASSOC_EXTS (en \"Abrir con\")"
+      say "$(T inst.assoc_openwith exts="$ASSOC_EXTS")"
     fi
     LAUNCH=(open "$APP")
   else
@@ -291,13 +305,15 @@ LAEOF
 fi
 
 # datos de la instalacion, por si el programa los necesita
-"$PY" - "$PROG/install_info.json" "$APP_ID" "$APP_NAME" "$VERSION" "$BASE" "$PY" "$VENV" "$PROG" "$ROOT" "py-installer $PYI_VERSION" <<'PYEOF'
+"$PY" - "$PROG/install_info.json" "$APP_ID" "$APP_NAME" "$VERSION" "$BASE" "$PY" "$VENV" "$PROG" "$ROOT" "py-installer $PYI_VERSION" "$LANG_CODE" <<'PYEOF'
 import json, sys, datetime
-keys = ['id', 'name', 'version', 'base_url', 'python', 'venv', 'program_dir', 'data_dir', 'installer']
+keys = ['id', 'name', 'version', 'base_url', 'python', 'venv', 'program_dir', 'data_dir', 'installer', 'lang']
 info = dict(zip(keys, sys.argv[2:]))
 info['installed_at'] = datetime.datetime.now().isoformat(timespec='seconds')
 json.dump(info, open(sys.argv[1], 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
 PYEOF
+# idioma del programa (lang-kit): el de este instalador, salvo que ya hubiera uno elegido (reinstalar no lo cambia)
+[ -e "$PROG/lang.json" ] || printf '{"lang": "%s"}' "$LANG_CODE" > "$PROG/lang.json"
 
 # desinstalador
 {
@@ -306,15 +322,16 @@ PYEOF
   printf 'PROG=%q; ROOT=%q; ENTRY=%q\n' "$PROG" "$ROOT" "$ENTRY"
   printf 'SHORTCUTS=('; printf '%q ' "${SHORTCUTS[@]}"; printf ')\n'
   printf 'KEEP=('; if [ "${#KEEP[@]}" -gt 0 ]; then printf '%q ' "${KEEP[@]}"; fi; printf ')\n'
+  printf 'TX_ASK=%q; TX_ASK_DATA=%q; TX_CANCELLED=%q; TX_DONE=%q\n' "$(T uninst.ask_sh) " "$(T uninst.ask_data_sh) " "$(T uninst.cancelled)" "$(T uninst.done_sh)"
   cat <<'UNEOF'
 # uso:  uninstall.sh [--si] [--borrar-datos]   (--si: sin preguntar; sin --borrar-datos se conservan tus datos)
 SI=0; DEL=0; for a in "$@"; do case "$a" in --si) SI=1 ;; --borrar-datos) DEL=1 ;; esac; done
 if [ "$SI" = 0 ]; then
   if { : < /dev/tty; } 2>/dev/null; then exec 3< /dev/tty; else exec 3<&0; fi
-  read -r -p "¿Desinstalar? [s/N] " r <&3 || r=n
-  case "$r" in s|S|y|Y) ;; *) echo "Cancelado."; exit 0 ;; esac
+  read -r -p "$TX_ASK" r <&3 || r=n
+  case "$r" in s|S|y|Y) ;; *) echo "$TX_CANCELLED"; exit 0 ;; esac
   if [ "${#KEEP[@]}" -gt 0 ] && [ "$DEL" = 0 ]; then
-    read -r -p "¿Borrar tambien tus datos y ajustes? [s/N] " r <&3 || r=n
+    read -r -p "$TX_ASK_DATA" r <&3 || r=n
     case "$r" in s|S|y|Y) DEL=1 ;; esac
   fi
 fi
@@ -335,7 +352,7 @@ command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$
 command -v update-mime-database >/dev/null 2>&1 && update-mime-database "${XDG_DATA_HOME:-$HOME/.local/share}/mime" >/dev/null 2>&1 || true
 rm -f "$0"
 rmdir "$ROOT" 2>/dev/null || true
-echo "Desinstalado."
+echo "$TX_DONE"
 UNEOF
 } > "$ROOT/uninstall.sh"
 chmod +x "$ROOT/uninstall.sh"
@@ -345,24 +362,24 @@ rm -rf "$STAGE"
 # comprobacion: ¿cargan de verdad las librerias?
 SMOKE_OK=1
 if [ -n "$CHECK_CODE" ]; then
-  say "comprobando que las librerias cargan..."
+  say "$(T inst.checking)"
   if SM="$(env ${CHECK_ENV[@]+"${CHECK_ENV[@]}"} "$VPY" -c "$CHECK_CODE
 print('PYI_OK')" 2>&1)" && [ "${SM##*$'\n'}" = "PYI_OK" ]; then
-    say "librerias correctas"
+    say "$(T inst.libs_ok)"
   else
     SMOKE_OK=0
-    printf '\n\033[33m  AVISO: las librerias no cargan en este equipo, asi que el programa no se abrira todavia:\033[0m\n%s\n' "$(printf '%s\n' "$SM" | tail -n 8)"
-    echo "  Registro: $LOG"
+    printf '\n\033[33m  %s\033[0m\n%s\n' "$(T inst.libs_broken_unix)" "$(printf '%s\n' "$SM" | tail -n 8)"
+    echo "  $(T inst.log_at path="$LOG")"
   fi
 fi
 
-printf '\n\033[32m  Listo. %s esta instalado.\033[0m\n' "$APP_NAME"
+printf '\n\033[32m  %s\033[0m\n' "$(T inst.ready app="$APP_NAME")"
 if [ "$KIND" = mac ]; then
-  echo "  Lo encuentras en la carpeta Aplicaciones de tu usuario ($LINK_NAME). Si macOS avisa de que no puede verificarlo: clic derecho > Abrir."
+  echo "  $(T inst.find_mac name="$LINK_NAME")"
 else
-  echo "  Lo encuentras en el menu de aplicaciones ($APP_NAME)."
+  echo "  $(T inst.find_linux name="$APP_NAME")"
 fi
-echo "  Para desinstalar: bash \"$ROOT/uninstall.sh\""
+echo "  $(T inst.uninstall_how cmd="bash \"$ROOT/uninstall.sh\"")"
 if [ -z "$(opt NO_LAUNCH)" ] && [ "$SMOKE_OK" = 1 ]; then
   (cd "$PROG" && "${LAUNCH[@]}" >/dev/null 2>&1 &) || true
 fi

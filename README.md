@@ -94,11 +94,13 @@ El instalador hace que el programa los abra. El programa recibe la ruta del arch
 
 py-installer usa [lang-kit](https://github.com/enderHugin/lang-kit), el sistema de idiomas común. Sus propios textos están en `lang/pyi.<idioma>.json`: los del instalador, el desinstalador, la página de descarga y la ventana de Actualizaciones. Ahora mismo hay español, inglés y catalán.
 
-**Un instalador por idioma.** En Windows se publican estos instaladores:
-- `<id>-instalar.cmd` en el idioma original;
-- `<id>-instalar-en.cmd` y `<id>-instalar-ca.cmd` para los demás idiomas.
+**Un instalador por sistema e idioma.** El del idioma original conserva su nombre:
+- `<id>-instalar.cmd`, `<id>-instalar.sh` y `<id>-instalar-macos.zip`.
 
-Linux y macOS de momento tienen un solo instalador, en español.
+Los demás idiomas llevan `-<idioma>`:
+- `<id>-instalar-en.cmd`, `<id>-instalar-ca.sh`, `<id>-instalar-macos-en.zip`…
+
+Dentro del zip de macOS, el `.command` también va en su idioma: «Install Mi App.command».
 
 **La página elige el instalador según el idioma de quien la visita.** Mira, en este orden:
 1. `?lang=xx` en la dirección;

@@ -101,7 +101,7 @@
     var how = {
       windows: esc(t('page.how.windows')),
       linux: esc(t('page.how.linux', { cmd1: '\u0001', cmd2: '\u0002' }))
-        .replace('\u0001', '<code>bash ~/' + esc(t('page.downloads_dir')) + '/' + esc(lin.split('/').pop()) + '</code>')
+        .replace('\u0001', '<code>bash ~/' + esc(t('page.downloads_dir')) + '/' + esc(lin.split('/').pop()) + '</code>')   // lk: ok (un comando)
         .replace('\u0002', '<code>curl -fsSL ' + esc(lin) + ' | bash</code>'),
       macos: esc(t('page.how.macos', { file: (app.mac_commands && app.mac_commands[lang]) || ('Instalar ' + app.name + '.command') }))
     };
@@ -112,7 +112,7 @@
       c.className = 'card' + (url ? '' : ' off');
       c.innerHTML = '<h3>' + label[os] + '</h3>' + (url
         ? '<p>' + how[os] + '</p><a href="' + esc(url) + '" download>' + esc(t('page.download')) + '</a>'
-        : '<p>' + esc(t('page.not_yet', { os: label[os] })) + '.</p>');
+        : '<p>' + esc(t('page.not_yet_card', { os: label[os] })) + '</p>');
       grid.appendChild(c);
     });
     var btn = document.getElementById('main'), hint = document.getElementById('hint');
